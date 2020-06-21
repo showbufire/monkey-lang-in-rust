@@ -1,6 +1,12 @@
 const ASSIGN: &'static str = "ASSIGN";
 const PLUS: &'static str = "PLUS";
 const EOF: &'static str = "EOF";
+const LPAREN: &'static str = "LPAREN";
+const RPAREN: &'static str = "RPAREN";
+const LBRACE: &'static str = "LBRACE";
+const RBRACE: &'static str = "RBRACE";
+const COMMA: &'static str = "COMMA";
+const SEMICOLON: &'static str = "SEMICOLON";
 
 #[derive(Debug, PartialEq)]
 pub struct Token {
@@ -51,8 +57,14 @@ impl Lexer {
         let token = match self.ch {
             b'=' => Token::new(ASSIGN, String::from("=")),
             b'+' => Token::new(PLUS, String::from("+")),
+            b'(' => Token::new(LPAREN, String::from("(")),
+            b')' => Token::new(RPAREN, String::from(")")),
+            b'{' => Token::new(LBRACE, String::from("{")),
+            b'}' => Token::new(RBRACE, String::from("}")),
+            b',' => Token::new(COMMA, String::from(",")),
+            b';' => Token::new(SEMICOLON, String::from(";")),
             0 => Token::new(EOF, String::from("")),
-            _ => panic!("unknown char {}", self.ch),
+            _ => panic!("unknown char {}", String::from_utf8(vec![self.ch]).unwrap()),
         };
         self.read_char();
         token
@@ -65,13 +77,19 @@ mod tests {
 
     #[test]
     fn test_lexer() {
-        let input = String::from("=+");
+        let input = String::from("=+(){},;");
         let mut lexer = Lexer::new(input);
 
         let expected = vec![
             Token::new(ASSIGN, String::from("=")),
             Token::new(PLUS, String::from("+")),
-            Token::new(EOF, String::from("")),
+            Token::new(LPAREN, String::from("(")),
+            Token::new(RPAREN, String::from(")")),
+            Token::new(LBRACE, String::from("{")),
+            Token::new(RBRACE, String::from("}")),
+            Token::new(COMMA, String::from(",")),
+            Token::new(SEMICOLON, String::from(";")),
+            Token::new(EOF, String::from("")),            
         ];
 
         for expected_token in expected {
