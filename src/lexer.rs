@@ -1,26 +1,17 @@
-const ASSIGN: &'static str = "ASSIGN";
-const PLUS: &'static str = "PLUS";
-const EOF: &'static str = "EOF";
-const LPAREN: &'static str = "LPAREN";
-const RPAREN: &'static str = "RPAREN";
-const LBRACE: &'static str = "LBRACE";
-const RBRACE: &'static str = "RBRACE";
-const COMMA: &'static str = "COMMA";
-const SEMICOLON: &'static str = "SEMICOLON";
-
 #[derive(Debug, PartialEq)]
-pub struct Token {
-    token_type: &'static str,
-    literal: String,
-}
-
-impl Token {
-    pub fn new(token_type: &'static str, literal: String) -> Token {
-        Token { 
-            token_type,
-            literal,
-        }
-    }
+pub enum Token {
+    ASSIGN,
+    PLUS,
+    EOF,
+    LPAREN,
+    RPAREN,
+    LBRACE,
+    RBRACE,
+    COMMA,
+    SEMICOLON,
+    LET,
+    FUNCTION,
+    IDENT(String),
 }
 
 pub struct Lexer {
@@ -55,15 +46,15 @@ impl Lexer {
 
     pub fn next_token(&mut self) -> Token {
         let token = match self.ch {
-            b'=' => Token::new(ASSIGN, String::from("=")),
-            b'+' => Token::new(PLUS, String::from("+")),
-            b'(' => Token::new(LPAREN, String::from("(")),
-            b')' => Token::new(RPAREN, String::from(")")),
-            b'{' => Token::new(LBRACE, String::from("{")),
-            b'}' => Token::new(RBRACE, String::from("}")),
-            b',' => Token::new(COMMA, String::from(",")),
-            b';' => Token::new(SEMICOLON, String::from(";")),
-            0 => Token::new(EOF, String::from("")),
+            b'=' => Token::ASSIGN,
+            b'+' => Token::PLUS,
+            b'(' => Token::LPAREN,
+            b')' => Token::RPAREN,
+            b'{' => Token::LBRACE,
+            b'}' => Token::RBRACE,
+            b',' => Token::COMMA,
+            b';' => Token::SEMICOLON,
+            0 => Token::EOF,
             _ => panic!("unknown char {}", String::from_utf8(vec![self.ch]).unwrap()),
         };
         self.read_char();
@@ -76,20 +67,40 @@ mod tests {
     use crate::lexer::*;
 
     #[test]
-    fn test_lexer() {
+    fn test_next_token() {
         let input = String::from("=+(){},;");
         let mut lexer = Lexer::new(input);
 
         let expected = vec![
-            Token::new(ASSIGN, String::from("=")),
-            Token::new(PLUS, String::from("+")),
-            Token::new(LPAREN, String::from("(")),
-            Token::new(RPAREN, String::from(")")),
-            Token::new(LBRACE, String::from("{")),
-            Token::new(RBRACE, String::from("}")),
-            Token::new(COMMA, String::from(",")),
-            Token::new(SEMICOLON, String::from(";")),
-            Token::new(EOF, String::from("")),            
+            Token::ASSIGN,
+            Token::PLUS,
+            Token::LPAREN,
+            Token::RPAREN,
+            Token::LBRACE,
+            Token::RBRACE,
+            Token::COMMA,
+            Token::SEMICOLON,
+            Token::EOF,
+        ];
+
+        for expected_token in expected {
+            let token = lexer.next_token();
+            assert_eq!(token, expected_token);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn test_next_token_with_ident() {
+        let input = String::from("let five = 5;
+        let ten = 10;
+        let add = fn(x, y) { 
+            x + y;
+        };
+        let result = add(five, ten);");
+        let mut lexer = Lexer::new(input);
+
+        let expected = vec![
         ];
 
         for expected_token in expected {
