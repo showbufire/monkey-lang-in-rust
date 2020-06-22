@@ -1,5 +1,10 @@
 const LET: &str = "let";
 const FUNCTION: &str = "fn";
+const IF: &str = "if";
+const ELSE: &str = "else";
+const TRUE: &str = "true";
+const FALSE: &str = "false";
+const RETURN: &str = "return";
 
 #[derive(Debug, PartialEq)]
 pub enum Token {
@@ -7,10 +12,13 @@ pub enum Token {
     ASTERISK,
     BANG,
     COMMA,
+    ELSE,
     EOF,
+    FALSE,
     FUNCTION,
     GT,
     IDENT(String),
+    IF,
     INT(i64),
     LBRACE,
     LET,
@@ -19,9 +27,11 @@ pub enum Token {
     MINUS,
     PLUS,
     RBRACE,
+    RETURN,
     RPAREN,
     SEMICOLON,
     SLASH,
+    TRUE,
 }
 
 pub struct Lexer {
@@ -76,6 +86,11 @@ impl Lexer {
         match ident_or_keyword.as_str() {
             LET => Token::LET,
             FUNCTION => Token::FUNCTION,
+            IF => Token::IF,
+            ELSE => Token::ELSE,
+            RETURN => Token::RETURN,
+            TRUE => Token::TRUE,
+            FALSE => Token::FALSE,
             _ => Token::IDENT(ident_or_keyword),
         }
     }
@@ -167,7 +182,12 @@ mod tests {
         };
         let result = add(five, ten);
         !-/*5;
-        5 < 10 > 5;");
+        5 < 10 > 5;
+        if (5 < 10) {
+            return true;
+        } else {
+            return false;
+        }");
         let mut lexer = Lexer::new(input);
 
         let expected = vec![
@@ -219,6 +239,23 @@ mod tests {
             Token::GT,
             Token::INT(5),
             Token::SEMICOLON,
+            Token::IF,
+            Token::LPAREN,
+            Token::INT(5),
+            Token::LT,
+            Token::INT(10),
+            Token::RPAREN,
+            Token::LBRACE,
+            Token::RETURN,
+            Token::TRUE,
+            Token::SEMICOLON,
+            Token::RBRACE,
+            Token::ELSE,
+            Token::LBRACE,
+            Token::RETURN,
+            Token::FALSE,
+            Token::SEMICOLON,
+            Token::RBRACE,
             Token::EOF,
         ];
 
