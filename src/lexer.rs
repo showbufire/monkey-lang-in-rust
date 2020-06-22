@@ -14,6 +14,7 @@ pub enum Token {
     COMMA,
     ELSE,
     EOF,
+    EQ,
     FALSE,
     FUNCTION,
     GT,
@@ -25,6 +26,7 @@ pub enum Token {
     LPAREN,
     LT,
     MINUS,
+    NE,
     PLUS,
     RBRACE,
     RETURN,
@@ -112,7 +114,12 @@ impl Lexer {
         self.skip_whitespaces();
 
         let token = match self.ch {
-            b'=' => Token::ASSIGN,
+            b'=' => if self.peek_char() != b'=' {
+                        Token::ASSIGN
+                    } else {
+                        self.read_char();
+                        Token::EQ
+                    }
             b'+' => Token::PLUS,
             b'(' => Token::LPAREN,
             b')' => Token::RPAREN,
@@ -125,7 +132,12 @@ impl Lexer {
             b'*' => Token::ASTERISK,
             b'<' => Token::LT,
             b'>' => Token::GT,
-            b'!' => Token::BANG,
+            b'!' => if self.peek_char() != b'=' {
+                        Token::BANG
+                    } else {
+                        self.read_char();
+                        Token::NE
+                    }
             b'a'..= b'z' | b'A'..= b'Z'=> self.next_identifier_or_keyword(),
             b'0'..= b'9' => self.next_int(),
             0 => Token::EOF,
@@ -175,19 +187,24 @@ mod tests {
 
     #[test]
     fn test_next_token_with_ident() {
-        let input = String::from("let five = 5;
-        let ten = 10;
-        let add = fn(x, y) {
-            x + y;
-        };
-        let result = add(five, ten);
-        !-/*5;
-        5 < 10 > 5;
-        if (5 < 10) {
-            return true;
-        } else {
-            return false;
-        }");
+        let input = String::from("
+            let five = 5;
+            let ten = 10;
+            let add = fn(x, y) {
+                x + y;
+            };
+            let result = add(five, ten);
+            !-/*5;
+            5 < 10 > 5;
+            if (5 < 10) {
+                return true;
+            } else {
+                return false;
+            }
+
+            10 == 10;
+            10 != 9;
+        ");
         let mut lexer = Lexer::new(input);
 
         let expected = vec![
@@ -256,6 +273,14 @@ mod tests {
             Token::FALSE,
             Token::SEMICOLON,
             Token::RBRACE,
+            Token::INT(10),
+            Token::EQ,
+            Token::INT(10),
+            Token::SEMICOLON,
+            Token::INT(10),
+            Token::NE,
+            Token::INT(9),
+            Token::SEMICOLON,
             Token::EOF,
         ];
 
