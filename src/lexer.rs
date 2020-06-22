@@ -148,7 +148,7 @@ impl Lexer {
     }
 
     fn skip_whitespaces(&mut self) {
-        while true {
+        loop {
             match self.ch {
                 b' ' | b'\t' | b'\n' => (),
                 _ => break,
