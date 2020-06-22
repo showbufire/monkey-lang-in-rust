@@ -4,22 +4,28 @@ const FUNCTION: &str = "fn";
 #[derive(Debug, PartialEq)]
 pub enum Token {
     ASSIGN,
-    PLUS,
-    EOF,
-    LPAREN,
-    RPAREN,
-    LBRACE,
-    RBRACE,
+    ASTERISK,
+    BANG,
     COMMA,
-    SEMICOLON,
-    LET,
+    EOF,
     FUNCTION,
+    GT,
     IDENT(String),
     INT(i64),
+    LBRACE,
+    LET,
+    LPAREN,
+    LT,
+    MINUS,
+    PLUS,
+    RBRACE,
+    RPAREN,
+    SEMICOLON,
+    SLASH,
 }
 
 pub struct Lexer {
-    input: String,    
+    input: String,
     pos: usize,
     read_pos: usize,
     ch: u8,
@@ -99,6 +105,12 @@ impl Lexer {
             b'}' => Token::RBRACE,
             b',' => Token::COMMA,
             b';' => Token::SEMICOLON,
+            b'-' => Token::MINUS,
+            b'/' => Token::SLASH,
+            b'*' => Token::ASTERISK,
+            b'<' => Token::LT,
+            b'>' => Token::GT,
+            b'!' => Token::BANG,
             b'a'..= b'z' | b'A'..= b'Z'=> self.next_identifier_or_keyword(),
             b'0'..= b'9' => self.next_int(),
             0 => Token::EOF,
@@ -150,10 +162,12 @@ mod tests {
     fn test_next_token_with_ident() {
         let input = String::from("let five = 5;
         let ten = 10;
-        let add = fn(x, y) { 
+        let add = fn(x, y) {
             x + y;
         };
-        let result = add(five, ten);");
+        let result = add(five, ten);
+        !-/*5;
+        5 < 10 > 5;");
         let mut lexer = Lexer::new(input);
 
         let expected = vec![
@@ -192,6 +206,18 @@ mod tests {
             Token::COMMA,
             Token::IDENT(String::from("ten")),
             Token::RPAREN,
+            Token::SEMICOLON,
+            Token::BANG,
+            Token::MINUS,
+            Token::SLASH,
+            Token::ASTERISK,
+            Token::INT(5),
+            Token::SEMICOLON,
+            Token::INT(5),
+            Token::LT,
+            Token::INT(10),
+            Token::GT,
+            Token::INT(5),
             Token::SEMICOLON,
             Token::EOF,
         ];
