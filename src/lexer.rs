@@ -6,7 +6,7 @@ const TRUE: &str = "true";
 const FALSE: &str = "false";
 const RETURN: &str = "return";
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Token {
     ASSIGN,
     ASTERISK,

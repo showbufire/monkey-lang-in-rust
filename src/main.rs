@@ -1,4 +1,6 @@
 mod lexer;
+mod parser;
+mod ast;
 
 use crate::lexer::Lexer;
 use crate::lexer::Token;
