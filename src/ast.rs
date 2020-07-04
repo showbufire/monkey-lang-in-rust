@@ -5,7 +5,8 @@ pub struct Program {
 
 #[derive(Debug, PartialEq)]
 pub enum Expression  {
-    Identifier{ name: String },
+    Identifier { name: String },
+    Int { value: i64 },
     Dummy,
 }
 
@@ -13,4 +14,5 @@ pub enum Expression  {
 pub enum Statement {
     Let { identifier: Expression, value: Expression },
     Return { value: Expression },
+    Expr { expr: Expression },
 }

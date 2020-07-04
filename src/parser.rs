@@ -50,7 +50,9 @@ impl Parser {
     }
 
     fn parse_expression_statement(&mut self) -> Result<Statement> {
-        Err(ParserError::Unimplemented(self.cur_token.clone()))
+        let expr = self.parse_expression()?;
+        self.expect_peak(Token::SEMICOLON)?;
+        Ok(Statement::Expr{ expr })
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement> {
@@ -86,7 +88,9 @@ impl Parser {
     }
 
     fn parse_expression(&mut self) -> Result<Expression> {
-        self.next_token();
+        while self.cur_token != Token::SEMICOLON && self.cur_token != Token::EOF {
+            self.next_token();
+        }
         Ok(Expression::Dummy)
     }
 
@@ -157,5 +161,18 @@ mod tests {
                 assert_eq!(x, y);
             }
         }
+    }
+
+    #[test]
+    fn test_expression_statement() {
+        let input = String::from("
+            x + 3;
+            foobar;
+        ");
+        let expected = vec![
+            Statement::Expr { expr: Expression::Dummy },
+            Statement::Expr { expr: Expression::Dummy },
+        ];
+        test_helper(input, expected);
     }
 }
