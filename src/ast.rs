@@ -1,16 +1,16 @@
-use crate::lexer::Token;
-
+#[derive(Debug)]
 pub struct Program {
     pub statements: Vec<Statement>,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Expression  {
-    Identifier(Token),
+    Identifier{ name: String },
     Dummy,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum Statement {
     Let { identifier: Expression, value: Expression },
+    Return { value: Expression },
 }

@@ -1,19 +1,24 @@
 use crate::lexer::{Token, Lexer};
 use crate::ast::*;
 
+#[allow(dead_code)]
 pub struct Parser {
     lexer: Lexer,
     cur_token: Token,
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParserError {
     UnexpectedToken { expected: Token, actual: Token },
     NotIdentifier(Token),
+    Unimplemented(Token),
 }
 
+#[allow(dead_code)]
 type Result<T> = std::result::Result<T, ParserError>;
 
+#[allow(dead_code)]
 impl Parser {
     fn new(mut lexer: Lexer) -> Parser {
         let first_token = lexer.next_token();
@@ -37,15 +42,30 @@ impl Parser {
     }
 
     fn parse_statement(&mut self) -> Result<Statement> {
-        self.parse_let_statement()
+        match self.cur_token {
+            Token::LET => self.parse_let_statement(),
+            Token::RETURN => self.parse_return_statement(),
+            _ => self.parse_expression_statement(),
+        }
+    }
+
+    fn parse_expression_statement(&mut self) -> Result<Statement> {
+        Err(ParserError::Unimplemented(self.cur_token.clone()))
+    }
+
+    fn parse_return_statement(&mut self) -> Result<Statement> {
+        self.expect_peak(Token::RETURN)?;
+        let value = self.parse_expression()?;
+        self.expect_peak(Token::SEMICOLON)?;
+        Ok(Statement::Return{ value })
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement> {
         self.expect_peak(Token::LET)?;
         let identifier = self.parse_identifier()?;
-        self.expect_peak(Token::ASSIGN);
+        self.expect_peak(Token::ASSIGN)?;
         let value = self.parse_expression()?;
-        self.expect_peak(Token::SEMICOLON);
+        self.expect_peak(Token::SEMICOLON)?;
         Ok(
             Statement::Let {
                 identifier,
@@ -55,10 +75,14 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> Result<Expression> {
-        match self.cur_token {
-            Token::IDENT(_) => Ok(Expression::Identifier(self.pop_token())),
+        let res = match &self.cur_token {
+            Token::IDENT(name) => Ok(Expression::Identifier{ name: name.clone() }),
             _ => Err(ParserError::NotIdentifier(self.cur_token.clone())),
+        };
+        if res.is_ok() {
+            self.next_token();
         }
+        res
     }
 
     fn parse_expression(&mut self) -> Result<Expression> {
@@ -77,12 +101,6 @@ impl Parser {
     fn next_token(&mut self) {
         self.cur_token = self.lexer.next_token();
     }
-
-    fn pop_token(&mut self) -> Token {
-        let token = self.cur_token.clone();
-        self.next_token();
-        token
-    }
 }
 
 #[cfg(test)]
@@ -98,23 +116,42 @@ mod tests {
         ");
         let expected = vec![
             Statement::Let {
-                identifier: Expression::Identifier(Token::IDENT(String::from("x"))),
+                identifier: Expression::Identifier{ name: String::from("x") },
                 value: Expression::Dummy,
             },
             Statement::Let {
-                identifier: Expression::Identifier(Token::IDENT(String::from("y"))),
+                identifier: Expression::Identifier{ name: String::from("y") },
                 value: Expression::Dummy,
             },
             Statement::Let {
-                identifier: Expression::Identifier(Token::IDENT(String::from("foobar"))),
+                identifier: Expression::Identifier{ name: String::from("foobar") },
                 value: Expression::Dummy,
             },
         ];
+        test_helper(input, expected);
+    }
+
+    #[test]
+    fn test_return_statement() {
+        let input = String::from("
+            return x;
+            return foobar;
+            return 5;
+        ");
+
+        let expected = vec![
+            Statement::Return { value: Expression::Dummy },
+            Statement::Return { value: Expression::Dummy },
+        ];
+        test_helper(input, expected);
+    }
+
+    fn test_helper(input: String, expected: Vec<Statement>) {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let parse_result = parser.parse_program();
 
-        assert_eq!(parse_result.is_ok(), true);
+        assert_eq!(parse_result.is_ok(), true, "err: {:?}", parse_result.unwrap_err());
         if let Ok(program) = parse_result {
             for (x, y) in program.statements.iter().zip(expected.iter()) {
                 assert_eq!(x, y);
