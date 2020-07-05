@@ -20,13 +20,22 @@ pub enum ParserError {
 #[allow(dead_code)]
 type Result<T> = std::result::Result<T, ParserError>;
 
+#[derive(PartialOrd, PartialEq)]
 enum Precedence {
     LOWEST,
     EQ,
-    LOGIC,
-    ADD,
+    PLUS,
     MULT,
     PREFIX,
+}
+
+fn op_precedence(token: &Token) -> Precedence {
+    match token {
+        Token::EQ | Token::LT | Token::GT | Token::NE => Precedence::EQ,
+        Token::PLUS | Token::MINUS => Precedence::PLUS,
+        Token::ASTERISK | Token::SLASH => Precedence::MULT,
+        _ => Precedence::LOWEST,
+    }
 }
 
 #[allow(dead_code)]
@@ -88,23 +97,34 @@ impl Parser {
     }
 
     fn parse_identifier(&mut self) -> Result<Expression> {
-        let res = match &self.cur_token {
-            Token::IDENT(name) => Ok(Expression::Identifier{ name: name.clone() }),
-            _ => Err(ParserError::NotIdentifier(self.cur_token.clone())),
+        let result = if let Token::IDENT(name) = &self.cur_token {
+            Ok(Expression::Identifier{ name: name.clone() })
+        } else {
+            Err(ParserError::NotIdentifier(self.cur_token.clone()))
         };
-        if res.is_ok() {
+        if result.is_ok() {
             self.next_token();
         }
-        res
+        result
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression> {
-        match self.cur_token {
-            Token::IDENT(_) => self.parse_identifier(),
-            Token::INT(_) => self.parse_int(),
-            Token::BANG | Token::MINUS => self.parse_prefix_expression(),
-            _ => Err(ParserError::NotLeft(self.cur_token.clone())),
+        let mut left = match self.cur_token {
+            Token::IDENT(_) => self.parse_identifier()?,
+            Token::INT(_) => self.parse_int()?,
+            Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
+            _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
+        };
+        while self.cur_token != Token::SEMICOLON && self.cur_token != Token::EOF && precedence < op_precedence(&self.cur_token) {
+            let op = self.pop_token();
+            let right = self.parse_expression(op_precedence(&op))?;
+            left = Expression::Infix {
+                op,
+                left: Box::new(left),
+                right: Box::new(right),
+            }
         }
+        Ok(left)
     }
 
     fn parse_prefix_expression(&mut self) -> Result<Expression> {
@@ -119,15 +139,12 @@ impl Parser {
     }
 
     fn parse_int(&mut self) -> Result<Expression> {
-        let res = match &self.cur_token {
-            Token::INT(value) => Ok(Expression::Int{ value: *value }),
-            _ => Err(ParserError::NotInt(self.cur_token.clone())),
-        };
-
-        if res.is_ok() {
+        if let Token::INT(value) = self.cur_token {
             self.next_token();
+            Ok(Expression::Int{ value})
+        } else {
+            Err(ParserError::NotInt(self.cur_token.clone()))
         }
-        res
     }
 
     fn expect_token(&mut self, expected: Token) -> Result<()> {
@@ -212,6 +229,9 @@ mod tests {
             foobar;
             !x;
             -5;
+            1 + 2;
+            1 + 2 * 3;
+            1 + 2 == 3;
         ");
         let expected = vec![
             Statement::Expr { expr: Expression::Int { value: 10 } },
@@ -223,6 +243,29 @@ mod tests {
             Statement::Expr { expr: Expression::Prefix {
                 op: Token::MINUS,
                 expr: Box::new(Expression::Int { value: 5 }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::PLUS,
+                left: Box::new(Expression::Int { value: 1 }),
+                right: Box::new(Expression::Int { value: 2 }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::PLUS,
+                left: Box::new(Expression::Int { value: 1 }),
+                right: Box::new(Expression::Infix {
+                    op: Token::ASTERISK,
+                    left: Box::new(Expression::Int { value: 2 }),
+                    right: Box::new(Expression::Int { value: 3 }),
+                }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::EQ,
+                left: Box::new(Expression::Infix {
+                    op: Token::PLUS,
+                    left: Box::new(Expression::Int { value: 1 }),
+                    right: Box::new(Expression::Int { value: 2 }),
+                }),
+                right: Box::new(Expression::Int { value: 3 }),
             }},
         ];
         test_helper(input, expected);
