@@ -11,12 +11,23 @@ pub struct Parser {
 #[allow(dead_code)]
 pub enum ParserError {
     UnexpectedToken { expected: Token, actual: Token },
+    NotLeft(Token),
     NotIdentifier(Token),
-    Unimplemented(Token),
+    NotInt(Token),
+    NotPrefixOp(Token),
 }
 
 #[allow(dead_code)]
 type Result<T> = std::result::Result<T, ParserError>;
+
+enum Precedence {
+    LOWEST,
+    EQ,
+    LOGIC,
+    ADD,
+    MULT,
+    PREFIX,
+}
 
 #[allow(dead_code)]
 impl Parser {
@@ -50,24 +61,24 @@ impl Parser {
     }
 
     fn parse_expression_statement(&mut self) -> Result<Statement> {
-        let expr = self.parse_expression()?;
-        self.expect_peak(Token::SEMICOLON)?;
+        let expr = self.parse_expression(Precedence::LOWEST)?;
+        self.expect_token(Token::SEMICOLON)?;
         Ok(Statement::Expr{ expr })
     }
 
     fn parse_return_statement(&mut self) -> Result<Statement> {
-        self.expect_peak(Token::RETURN)?;
-        let value = self.parse_expression()?;
-        self.expect_peak(Token::SEMICOLON)?;
+        self.expect_token(Token::RETURN)?;
+        let value = self.parse_expression(Precedence::LOWEST)?;
+        self.expect_token(Token::SEMICOLON)?;
         Ok(Statement::Return{ value })
     }
 
     fn parse_let_statement(&mut self) -> Result<Statement> {
-        self.expect_peak(Token::LET)?;
+        self.expect_token(Token::LET)?;
         let identifier = self.parse_identifier()?;
-        self.expect_peak(Token::ASSIGN)?;
-        let value = self.parse_expression()?;
-        self.expect_peak(Token::SEMICOLON)?;
+        self.expect_token(Token::ASSIGN)?;
+        let value = self.parse_expression(Precedence::LOWEST)?;
+        self.expect_token(Token::SEMICOLON)?;
         Ok(
             Statement::Let {
                 identifier,
@@ -87,19 +98,50 @@ impl Parser {
         res
     }
 
-    fn parse_expression(&mut self) -> Result<Expression> {
-        while self.cur_token != Token::SEMICOLON && self.cur_token != Token::EOF {
-            self.next_token();
+    fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression> {
+        match self.cur_token {
+            Token::IDENT(_) => self.parse_identifier(),
+            Token::INT(_) => self.parse_int(),
+            Token::BANG | Token::MINUS => self.parse_prefix_expression(),
+            _ => Err(ParserError::NotLeft(self.cur_token.clone())),
         }
-        Ok(Expression::Dummy)
     }
 
-    fn expect_peak(&mut self, expected: Token) -> Result<()> {
+    fn parse_prefix_expression(&mut self) -> Result<Expression> {
+        match self.cur_token {
+            Token::BANG | Token::MINUS => {
+                let op = self.pop_token();
+                let expr = self.parse_expression(Precedence::PREFIX)?;
+                Ok(Expression::Prefix { op, expr: Box::new(expr)})
+            },
+            _ => Err(ParserError::NotPrefixOp(self.cur_token.clone())),
+        }
+    }
+
+    fn parse_int(&mut self) -> Result<Expression> {
+        let res = match &self.cur_token {
+            Token::INT(value) => Ok(Expression::Int{ value: *value }),
+            _ => Err(ParserError::NotInt(self.cur_token.clone())),
+        };
+
+        if res.is_ok() {
+            self.next_token();
+        }
+        res
+    }
+
+    fn expect_token(&mut self, expected: Token) -> Result<()> {
         if self.cur_token != expected {
             return Err(ParserError::UnexpectedToken{ expected, actual: self.cur_token.clone() });
         }
         self.next_token();
         Ok(())
+    }
+
+    fn pop_token(&mut self) -> Token {
+        let token = self.cur_token.clone();
+        self.next_token();
+        token
     }
 
     fn next_token(&mut self) {
@@ -121,15 +163,15 @@ mod tests {
         let expected = vec![
             Statement::Let {
                 identifier: Expression::Identifier{ name: String::from("x") },
-                value: Expression::Dummy,
+                value: Expression::Int { value: 5 },
             },
             Statement::Let {
                 identifier: Expression::Identifier{ name: String::from("y") },
-                value: Expression::Dummy,
+                value: Expression::Int { value: 10 },
             },
             Statement::Let {
                 identifier: Expression::Identifier{ name: String::from("foobar") },
-                value: Expression::Dummy,
+                value: Expression::Int { value: 838383 },
             },
         ];
         test_helper(input, expected);
@@ -139,13 +181,12 @@ mod tests {
     fn test_return_statement() {
         let input = String::from("
             return x;
-            return foobar;
             return 5;
         ");
 
         let expected = vec![
-            Statement::Return { value: Expression::Dummy },
-            Statement::Return { value: Expression::Dummy },
+            Statement::Return { value: Expression::Identifier { name: String::from("x") } },
+            Statement::Return { value: Expression::Int { value: 5 } },
         ];
         test_helper(input, expected);
     }
@@ -157,6 +198,7 @@ mod tests {
 
         assert_eq!(parse_result.is_ok(), true, "err: {:?}", parse_result.unwrap_err());
         if let Ok(program) = parse_result {
+            assert_eq!(program.statements.len(), expected.len());
             for (x, y) in program.statements.iter().zip(expected.iter()) {
                 assert_eq!(x, y);
             }
@@ -166,12 +208,22 @@ mod tests {
     #[test]
     fn test_expression_statement() {
         let input = String::from("
-            x + 3;
+            10;
             foobar;
+            !x;
+            -5;
         ");
         let expected = vec![
-            Statement::Expr { expr: Expression::Dummy },
-            Statement::Expr { expr: Expression::Dummy },
+            Statement::Expr { expr: Expression::Int { value: 10 } },
+            Statement::Expr { expr: Expression::Identifier { name: String::from("foobar") } },
+            Statement::Expr { expr: Expression::Prefix {
+                op: Token::BANG,
+                expr: Box::new(Expression::Identifier { name: String::from("x")}),
+            }},
+            Statement::Expr { expr: Expression::Prefix {
+                op: Token::MINUS,
+                expr: Box::new(Expression::Int { value: 5 }),
+            }},
         ];
         test_helper(input, expected);
     }
