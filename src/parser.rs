@@ -38,6 +38,15 @@ fn op_precedence(token: &Token) -> Precedence {
     }
 }
 
+fn is_infix_op(token: &Token) -> bool {
+    match token {
+        Token::EQ | Token::LT | Token::GT | Token::NE => true,
+        Token::PLUS | Token::MINUS => true,
+        Token::ASTERISK | Token::SLASH => true,
+        _ => false,
+    }
+}
+
 #[allow(dead_code)]
 impl Parser {
     fn new(mut lexer: Lexer) -> Parser {
@@ -112,10 +121,11 @@ impl Parser {
         let mut left = match self.cur_token {
             Token::IDENT(_) => self.parse_identifier()?,
             Token::INT(_) => self.parse_int()?,
+            Token::LPAREN => self.parse_grouped_expression()?,
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
-        while self.cur_token != Token::SEMICOLON && self.cur_token != Token::EOF && precedence < op_precedence(&self.cur_token) {
+        while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
             let op = self.pop_token();
             let right = self.parse_expression(op_precedence(&op))?;
             left = Expression::Infix {
@@ -125,6 +135,13 @@ impl Parser {
             }
         }
         Ok(left)
+    }
+
+    fn parse_grouped_expression(&mut self) -> Result<Expression> {
+        self.expect_token(Token::LPAREN)?;
+        let expr = self.parse_expression(Precedence::LOWEST)?;
+        self.expect_token(Token::RPAREN)?;
+        Ok(expr)
     }
 
     fn parse_prefix_expression(&mut self) -> Result<Expression> {
@@ -232,6 +249,8 @@ mod tests {
             1 + 2;
             1 + 2 * 3;
             1 + 2 == 3;
+            2 * ( 3 + 4 );
+            1 / ( 2 * (3 + 4) );
         ");
         let expected = vec![
             Statement::Expr { expr: Expression::Int { value: 10 } },
@@ -266,6 +285,28 @@ mod tests {
                     right: Box::new(Expression::Int { value: 2 }),
                 }),
                 right: Box::new(Expression::Int { value: 3 }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::ASTERISK,
+                left: Box::new(Expression::Int { value: 2 }),
+                right: Box::new(Expression::Infix {
+                    op: Token::PLUS,
+                    left: Box::new(Expression::Int { value: 3 }),
+                    right: Box::new(Expression::Int { value: 4 }),
+                }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::SLASH,
+                left: Box::new(Expression::Int { value: 1 }),
+                right: Box::new(Expression::Infix {
+                    op: Token::ASTERISK,
+                    left: Box::new(Expression::Int { value: 2 }),
+                    right: Box::new(Expression::Infix {
+                        op: Token::PLUS,
+                        left: Box::new(Expression::Int { value: 3 }),
+                        right: Box::new(Expression::Int { value: 4 }),
+                    }),
+                }),
             }},
         ];
         test_helper(input, expected);
