@@ -11,6 +11,7 @@ pub enum Expression {
     Int { value: i64 },
     Prefix { op: Token, expr: Box<Expression> },
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
+    Bool { value: bool },
 }
 
 #[derive(Debug, PartialEq)]

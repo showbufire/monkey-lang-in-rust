@@ -14,6 +14,7 @@ pub enum ParserError {
     NotLeft(Token),
     NotIdentifier(Token),
     NotInt(Token),
+    NotBool(Token),
     NotPrefixOp(Token),
 }
 
@@ -121,6 +122,7 @@ impl Parser {
         let mut left = match self.cur_token {
             Token::IDENT(_) => self.parse_identifier()?,
             Token::INT(_) => self.parse_int()?,
+            Token::TRUE | Token::FALSE => self.parse_bool()?,
             Token::LPAREN => self.parse_grouped_expression()?,
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
@@ -135,6 +137,18 @@ impl Parser {
             }
         }
         Ok(left)
+    }
+
+    fn parse_bool(&mut self) -> Result<Expression> {
+        let res = match self.cur_token {
+            Token::TRUE => Ok(Expression::Bool { value: true }),
+            Token::FALSE => Ok(Expression::Bool { value: false }),
+            _ => Err(ParserError::NotBool(self.cur_token.clone())),
+        };
+        if res.is_ok() {
+            self.next_token();
+        }
+        res
     }
 
     fn parse_grouped_expression(&mut self) -> Result<Expression> {
@@ -158,7 +172,7 @@ impl Parser {
     fn parse_int(&mut self) -> Result<Expression> {
         if let Token::INT(value) = self.cur_token {
             self.next_token();
-            Ok(Expression::Int{ value})
+            Ok(Expression::Int{ value })
         } else {
             Err(ParserError::NotInt(self.cur_token.clone()))
         }
@@ -251,6 +265,7 @@ mod tests {
             1 + 2 == 3;
             2 * ( 3 + 4 );
             1 / ( 2 * (3 + 4) );
+            true == false;
         ");
         let expected = vec![
             Statement::Expr { expr: Expression::Int { value: 10 } },
@@ -307,6 +322,11 @@ mod tests {
                         right: Box::new(Expression::Int { value: 4 }),
                     }),
                 }),
+            }},
+            Statement::Expr { expr: Expression::Infix {
+                op: Token::EQ,
+                left: Box::new(Expression::Bool { value: true }),
+                right: Box::new(Expression::Bool { value: false }),
             }},
         ];
         test_helper(input, expected);
