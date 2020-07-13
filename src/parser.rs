@@ -125,6 +125,7 @@ impl Parser {
             Token::TRUE | Token::FALSE => self.parse_bool()?,
             Token::LPAREN => self.parse_grouped_expression()?,
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
+            Token::IF => self.parse_if_expression()?,
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
@@ -137,6 +138,37 @@ impl Parser {
             }
         }
         Ok(left)
+    }
+
+    fn parse_if_expression(&mut self) -> Result<Expression> {
+        self.expect_token(Token::IF)?;
+        self.expect_token(Token::LPAREN)?;
+        let condition = self.parse_expression(Precedence::LOWEST)?;
+        self.expect_token(Token::RPAREN)?;
+        let consequence = self.parse_block_statement()?;
+        let mut alternative = None;
+        if self.cur_token == Token::ELSE {
+            self.next_token();
+            alternative = Some(Box::new(self.parse_block_statement()?));
+        }
+        Ok(Expression::If {
+            condition: Box::new(condition),
+            consequence: Box::new(consequence),
+            alternative,
+        })
+    }
+
+    fn parse_block_statement(&mut self) -> Result<Statement> {
+        self.expect_token(Token::LBRACE)?;
+        let mut statements = Vec::new();
+        while self.cur_token != Token::EOF && self.cur_token != Token::RBRACE {
+            let statement = self.parse_statement()?;
+            statements.push(statement);
+        }
+        self.expect_token(Token::RBRACE)?;
+        Ok(Statement::Block {
+            statements,
+        })
     }
 
     fn parse_bool(&mut self) -> Result<Expression> {
@@ -331,4 +363,61 @@ mod tests {
         ];
         test_helper(input, expected);
     }
+
+    #[test]
+    fn test_if_expression() {
+        let input = String::from("
+            let z = if (x < y) {
+                x;
+            } else {
+                y;
+            };
+            if (x < y) {
+                return x;
+            };
+        ");
+
+        let expected = vec![
+            Statement::Let {
+                identifier: Expression::Identifier { name: String::from("z") },
+                value: Expression::If {
+                    condition: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Identifier { name: String::from("x") }),
+                        op: Token::LT,
+                        right: Box::new(Expression::Identifier { name: String::from("y") }),
+                    }),
+                    consequence: Box::new(Statement::Block {
+                        statements: vec![
+                            Statement::Expr { expr: Expression::Identifier{ name: String::from("x") } },
+                        ],
+                    }),
+                    alternative: Some(Box::new(Statement::Block {
+                        statements: vec![
+                            Statement::Expr { expr: Expression::Identifier{ name: String::from("y") } },
+                       ],
+                    })),
+                },
+
+            },
+            Statement::Expr {
+                expr: Expression::If {
+                    condition: Box::new(Expression::Infix {
+                        left: Box::new(Expression::Identifier { name: String::from("x") }),
+                        op: Token::LT,
+                        right: Box::new(Expression::Identifier { name: String::from("y") }),
+                    }),
+                    consequence: Box::new(Statement::Block {
+                        statements: vec![
+                            Statement::Return {
+                                value: Expression::Identifier { name: String::from("x") },
+                            },
+                        ],
+                    }),
+                    alternative: None,
+                },
+            },
+        ];
+        test_helper(input, expected);
+    }
+
 }
