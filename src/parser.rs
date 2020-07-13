@@ -28,6 +28,7 @@ enum Precedence {
     PLUS,
     MULT,
     PREFIX,
+    CALL,
 }
 
 fn op_precedence(token: &Token) -> Precedence {
@@ -35,6 +36,7 @@ fn op_precedence(token: &Token) -> Precedence {
         Token::EQ | Token::LT | Token::GT | Token::NE => Precedence::EQ,
         Token::PLUS | Token::MINUS => Precedence::PLUS,
         Token::ASTERISK | Token::SLASH => Precedence::MULT,
+        Token::LPAREN => Precedence::CALL,
         _ => Precedence::LOWEST,
     }
 }
@@ -44,6 +46,7 @@ fn is_infix_op(token: &Token) -> bool {
         Token::EQ | Token::LT | Token::GT | Token::NE => true,
         Token::PLUS | Token::MINUS => true,
         Token::ASTERISK | Token::SLASH => true,
+        Token::LPAREN => true,
         _ => false,
     }
 }
@@ -130,13 +133,21 @@ impl Parser {
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
-            let op = self.pop_token();
-            let right = self.parse_expression(op_precedence(&op))?;
-            left = Expression::Infix {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-            }
+            if self.cur_token == Token::LPAREN {
+                let arguments = self.parse_parameters()?;
+                left = Expression::Call {
+                    function: Box::new(left),
+                    arguments: arguments
+                }
+            } else {
+                let op = self.pop_token();
+                let right = self.parse_expression(op_precedence(&op))?;
+                left = Expression::Infix {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                }
+            };
         }
         Ok(left)
     }
@@ -500,6 +511,45 @@ mod tests {
                         }},
                     ],
                 }),
+            },
+        ];
+        test_parse_expressions(input, expected);
+    }
+
+    #[test]
+    fn test_call_expression() {
+        let input = String::from("
+            foo();
+            bar(x+1);
+            fn(){ }();
+        ");
+        let expected = vec![
+            Expression::Call {
+                function: Box::new(Expression::Identifier {
+                    name: String::from("foo"),
+                }),
+                arguments: vec![],
+            },
+            Expression::Call {
+                function: Box::new(Expression::Identifier {
+                    name: String::from("bar"),
+                }),
+                arguments: vec![
+                    Expression::Infix {
+                        left: Box::new(Expression::Identifier { name: String::from("x") }),
+                        op: Token::PLUS,
+                        right: Box::new(Expression::Int { value: 1 }),
+                    },
+                ],
+            },
+            Expression::Call {
+                function: Box::new(Expression::Function {
+                    parameters: vec![],
+                    body: Box::new(Statement::Block {
+                        statements: vec![],
+                    }),
+                }),
+                arguments: vec![],
             },
         ];
         test_parse_expressions(input, expected);

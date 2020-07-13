@@ -12,8 +12,16 @@ pub enum Expression {
     Prefix { op: Token, expr: Box<Expression> },
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
     Bool { value: bool },
-    If { condition: Box<Expression>, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
+    If {
+        condition: Box<Expression>,
+        consequence: Box<Statement>,
+        alternative: Option<Box<Statement>>
+    },
     Function { parameters: Vec<Expression>, body: Box<Statement> },
+    Call {
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
