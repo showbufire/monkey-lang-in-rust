@@ -126,6 +126,7 @@ impl Parser {
             Token::LPAREN => self.parse_grouped_expression()?,
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
             Token::IF => self.parse_if_expression()?,
+            Token::FUNCTION => self.parse_function_expression()?,
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
@@ -138,6 +139,30 @@ impl Parser {
             }
         }
         Ok(left)
+    }
+
+    fn parse_function_expression(&mut self) -> Result<Expression> {
+        self.expect_token(Token::FUNCTION)?;
+        let parameters = self.parse_parameters()?;
+        let body = self.parse_block_statement()?;
+        Ok(Expression::Function{
+            parameters,
+            body: Box::new(body),
+        })
+    }
+
+    fn parse_parameters(&mut self) -> Result<Vec<Expression>> {
+        self.expect_token(Token::LPAREN)?;
+        let mut parameters = Vec::new();
+        while self.cur_token != Token::EOF && self.cur_token != Token::RPAREN {
+            let expr = self.parse_expression(Precedence::LOWEST)?;
+            parameters.push(expr);
+            if self.cur_token == Token::COMMA {
+                self.next_token();
+            }
+        }
+        self.expect_token(Token::RPAREN)?;
+        Ok(parameters)
     }
 
     fn parse_if_expression(&mut self) -> Result<Expression> {
@@ -428,8 +453,55 @@ mod tests {
                 }),
                 alternative: None,
             },
-    ];
+        ];
         test_parse_expressions(input, expected);
     }
 
+    #[test]
+    fn test_function_literal() {
+        let input = String::from("
+            fn() {
+            };
+            fn(x) {
+                x;
+            };
+            fn(x, y) {
+                x + y;
+            };
+        ");
+        let expected = vec![
+            Expression::Function {
+                parameters: vec![],
+                body: Box::new(Statement::Block {
+                    statements: vec![],
+                }),
+            },
+            Expression::Function {
+                parameters: vec![
+                    Expression::Identifier { name: String::from("x") },
+                ],
+                body: Box::new(Statement::Block {
+                    statements: vec![
+                        Statement::Expr { expr: Expression::Identifier{ name: String::from("x") } },
+                    ]
+                }),
+            },
+            Expression::Function {
+                parameters: vec![
+                    Expression::Identifier { name: String::from("x") },
+                    Expression::Identifier { name: String::from("y") },
+                ],
+                body: Box::new(Statement::Block {
+                    statements: vec![
+                        Statement::Expr { expr: Expression::Infix {
+                            left: Box::new(Expression::Identifier{ name: String::from("x") }),
+                            op: Token::PLUS,
+                            right: Box::new(Expression::Identifier{ name: String::from("y") })
+                        }},
+                    ],
+                }),
+            },
+        ];
+        test_parse_expressions(input, expected);
+    }
 }

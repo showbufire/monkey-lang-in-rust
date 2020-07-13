@@ -13,6 +13,7 @@ pub enum Expression {
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
     Bool { value: bool },
     If { condition: Box<Expression>, consequence: Box<Statement>, alternative: Option<Box<Statement>> },
+    Function { parameters: Vec<Expression>, body: Box<Statement> },
 }
 
 #[derive(Debug, PartialEq)]
