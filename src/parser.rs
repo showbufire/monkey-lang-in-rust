@@ -522,6 +522,7 @@ mod tests {
             foo();
             bar(x+1);
             fn(){ }();
+            foo(bar(x), y);
         ");
         let expected = vec![
             Expression::Call {
@@ -551,6 +552,22 @@ mod tests {
                 }),
                 arguments: vec![],
             },
+            Expression::Call {
+                function: Box::new(Expression::Identifier {
+                    name: String::from("foo"),
+                }),
+                arguments: vec![
+                    Expression::Call {
+                        function: Box::new(Expression::Identifier {
+                            name: String::from("bar"),
+                        }),
+                        arguments: vec![
+                            Expression::Identifier { name: String::from("x") },
+                        ],
+                    },
+                    Expression::Identifier { name: String::from("y") },
+                ],
+            }
         ];
         test_parse_expressions(input, expected);
     }
