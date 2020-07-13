@@ -53,7 +53,7 @@ fn is_infix_op(token: &Token) -> bool {
 
 #[allow(dead_code)]
 impl Parser {
-    fn new(mut lexer: Lexer) -> Parser {
+    pub fn new(mut lexer: Lexer) -> Parser {
         let first_token = lexer.next_token();
         Parser {
             lexer,
@@ -61,7 +61,7 @@ impl Parser {
         }
     }
 
-    fn parse_program(&mut self) -> Result<Program> {
+    pub fn parse_program(&mut self) -> Result<Program> {
         let mut statements = Vec::new();
         while self.cur_token != Token::EOF {
             let statement = self.parse_statement()?;
