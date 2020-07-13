@@ -254,7 +254,7 @@ mod tests {
                 value: Expression::Int { value: 838383 },
             },
         ];
-        test_helper(input, expected);
+        test_parse_statements(input, expected);
     }
 
     #[test]
@@ -268,10 +268,10 @@ mod tests {
             Statement::Return { value: Expression::Identifier { name: String::from("x") } },
             Statement::Return { value: Expression::Int { value: 5 } },
         ];
-        test_helper(input, expected);
+        test_parse_statements(input, expected);
     }
 
-    fn test_helper(input: String, expected: Vec<Statement>) {
+    fn test_parse_statements(input: String, expected: Vec<Statement>) {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let parse_result = parser.parse_program();
@@ -281,6 +281,23 @@ mod tests {
             assert_eq!(program.statements.len(), expected.len());
             for (x, y) in program.statements.iter().zip(expected.iter()) {
                 assert_eq!(x, y);
+            }
+        }
+    }
+
+    fn test_parse_expressions(input: String, expected: Vec<Expression>) {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let parse_result = parser.parse_program();
+
+        assert_eq!(parse_result.is_ok(), true, "err: {:?}", parse_result.unwrap_err());
+        if let Ok(program) = parse_result {
+            assert_eq!(program.statements.len(), expected.len());
+            for (x, y) in program.statements.iter().zip(expected.iter()) {
+                match x {
+                    Statement::Expr { expr } => assert_eq!(expr, y),
+                    _ => assert!(false, "Expected expression statement, got {:?}", x)
+                }
             }
         }
     }
@@ -298,24 +315,25 @@ mod tests {
             2 * ( 3 + 4 );
             1 / ( 2 * (3 + 4) );
             true == false;
+
         ");
         let expected = vec![
-            Statement::Expr { expr: Expression::Int { value: 10 } },
-            Statement::Expr { expr: Expression::Identifier { name: String::from("foobar") } },
-            Statement::Expr { expr: Expression::Prefix {
+            Expression::Int { value: 10 },
+            Expression::Identifier { name: String::from("foobar") },
+            Expression::Prefix {
                 op: Token::BANG,
                 expr: Box::new(Expression::Identifier { name: String::from("x")}),
-            }},
-            Statement::Expr { expr: Expression::Prefix {
+            },
+            Expression::Prefix {
                 op: Token::MINUS,
                 expr: Box::new(Expression::Int { value: 5 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::PLUS,
                 left: Box::new(Expression::Int { value: 1 }),
                 right: Box::new(Expression::Int { value: 2 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::PLUS,
                 left: Box::new(Expression::Int { value: 1 }),
                 right: Box::new(Expression::Infix {
@@ -323,8 +341,8 @@ mod tests {
                     left: Box::new(Expression::Int { value: 2 }),
                     right: Box::new(Expression::Int { value: 3 }),
                 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::EQ,
                 left: Box::new(Expression::Infix {
                     op: Token::PLUS,
@@ -332,8 +350,8 @@ mod tests {
                     right: Box::new(Expression::Int { value: 2 }),
                 }),
                 right: Box::new(Expression::Int { value: 3 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::ASTERISK,
                 left: Box::new(Expression::Int { value: 2 }),
                 right: Box::new(Expression::Infix {
@@ -341,8 +359,8 @@ mod tests {
                     left: Box::new(Expression::Int { value: 3 }),
                     right: Box::new(Expression::Int { value: 4 }),
                 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::SLASH,
                 left: Box::new(Expression::Int { value: 1 }),
                 right: Box::new(Expression::Infix {
@@ -354,20 +372,20 @@ mod tests {
                         right: Box::new(Expression::Int { value: 4 }),
                     }),
                 }),
-            }},
-            Statement::Expr { expr: Expression::Infix {
+            },
+            Expression::Infix {
                 op: Token::EQ,
                 left: Box::new(Expression::Bool { value: true }),
                 right: Box::new(Expression::Bool { value: false }),
-            }},
+            },
         ];
-        test_helper(input, expected);
+        test_parse_expressions(input, expected);
     }
 
     #[test]
     fn test_if_expression() {
         let input = String::from("
-            let z = if (x < y) {
+            if (x < y) {
                 x;
             } else {
                 y;
@@ -378,46 +396,40 @@ mod tests {
         ");
 
         let expected = vec![
-            Statement::Let {
-                identifier: Expression::Identifier { name: String::from("z") },
-                value: Expression::If {
-                    condition: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Identifier { name: String::from("x") }),
-                        op: Token::LT,
-                        right: Box::new(Expression::Identifier { name: String::from("y") }),
-                    }),
-                    consequence: Box::new(Statement::Block {
-                        statements: vec![
-                            Statement::Expr { expr: Expression::Identifier{ name: String::from("x") } },
-                        ],
-                    }),
-                    alternative: Some(Box::new(Statement::Block {
-                        statements: vec![
-                            Statement::Expr { expr: Expression::Identifier{ name: String::from("y") } },
-                       ],
-                    })),
-                },
-
+            Expression::If {
+                condition: Box::new(Expression::Infix {
+                    left: Box::new(Expression::Identifier { name: String::from("x") }),
+                    op: Token::LT,
+                    right: Box::new(Expression::Identifier { name: String::from("y") }),
+                }),
+                consequence: Box::new(Statement::Block {
+                    statements: vec![
+                        Statement::Expr { expr: Expression::Identifier{ name: String::from("x") } },
+                    ],
+                }),
+                alternative: Some(Box::new(Statement::Block {
+                    statements: vec![
+                        Statement::Expr { expr: Expression::Identifier{ name: String::from("y") } },
+                    ],
+                })),
             },
-            Statement::Expr {
-                expr: Expression::If {
-                    condition: Box::new(Expression::Infix {
-                        left: Box::new(Expression::Identifier { name: String::from("x") }),
-                        op: Token::LT,
-                        right: Box::new(Expression::Identifier { name: String::from("y") }),
-                    }),
-                    consequence: Box::new(Statement::Block {
-                        statements: vec![
-                            Statement::Return {
-                                value: Expression::Identifier { name: String::from("x") },
-                            },
-                        ],
-                    }),
-                    alternative: None,
-                },
+            Expression::If {
+                condition: Box::new(Expression::Infix {
+                    left: Box::new(Expression::Identifier { name: String::from("x") }),
+                    op: Token::LT,
+                    right: Box::new(Expression::Identifier { name: String::from("y") }),
+                }),
+                consequence: Box::new(Statement::Block {
+                    statements: vec![
+                        Statement::Return {
+                            value: Expression::Identifier { name: String::from("x") },
+                        },
+                    ],
+                }),
+                alternative: None,
             },
-        ];
-        test_helper(input, expected);
+    ];
+        test_parse_expressions(input, expected);
     }
 
 }
