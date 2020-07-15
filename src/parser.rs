@@ -84,7 +84,9 @@ impl Parser {
 
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let expr = self.parse_expression(Precedence::LOWEST)?;
-        self.expect_token(Token::SEMICOLON)?;
+        if self.cur_token == Token::SEMICOLON {
+            self.next_token();
+        }
         Ok(Statement::Expr{ expr })
     }
 
@@ -350,8 +352,7 @@ mod tests {
             1 + 2 == 3;
             2 * ( 3 + 4 );
             1 / ( 2 * (3 + 4) );
-            true == false;
-
+            true == false
         ");
         let expected = vec![
             Expression::Int { value: 10 },
@@ -422,9 +423,9 @@ mod tests {
     fn test_if_expression() {
         let input = String::from("
             if (x < y) {
-                x;
+                x
             } else {
-                y;
+                y
             };
             if (x < y) {
                 return x;
@@ -474,11 +475,11 @@ mod tests {
             fn() {
             };
             fn(x) {
-                x;
+                x
             };
             fn(x, y) {
-                x + y;
-            };
+                x + y
+            }
         ");
         let expected = vec![
             Expression::Function {
