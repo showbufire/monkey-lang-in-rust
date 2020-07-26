@@ -1,6 +1,7 @@
 use crate::ast::*;
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::lexer::Token;
 
 #[derive(Debug, PartialEq)]
 pub enum Object {
@@ -13,6 +14,7 @@ pub enum Object {
 #[derive(Debug, PartialEq)]
 pub enum EvalError {
     Unsupported(String),
+    PrefixNotApplicable(String),
 }
 
 type Result<T> = std::result::Result<T, EvalError>;
@@ -42,6 +44,14 @@ fn eval_expression(expression: &Expression) -> Result<Object> {
         Expression::Int { value } => Ok(Object::Int(*value)),
         Expression::Bool { value: true } => Ok(Object::True),
         Expression::Bool { value: false } => Ok(Object::False),
+        Expression::Prefix { op, expr } => {
+            match (op, eval_expression(expr)?) {
+                (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
+                (Token::BANG, Object::True) => Ok(Object::False),
+                (Token::BANG, Object::False) => Ok(Object::True),
+                (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
+            }
+        }
         _ => Err(EvalError::Unsupported(format!("{:?}", expression))),
     }
 }
@@ -56,9 +66,15 @@ mod tests {
             5;
             true;
             false;
+            -5;
+            !false;
+            !true;
         ");
         let expected = vec![
             Object::Int(5),
+            Object::True,
+            Object::False,
+            Object::Int(-5),
             Object::True,
             Object::False,
         ];
