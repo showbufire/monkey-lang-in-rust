@@ -5,8 +5,7 @@ use crate::lexer::Token;
 
 #[derive(Debug, PartialEq)]
 pub enum Object {
-    True,
-    False,
+    Bool(bool),
     Int(i64),
     Null,
 }
@@ -15,6 +14,7 @@ pub enum Object {
 pub enum EvalError {
     Unsupported(String),
     PrefixNotApplicable(String),
+    InfixNotApplicable(String),
 }
 
 type Result<T> = std::result::Result<T, EvalError>;
@@ -42,16 +42,30 @@ fn eval_statement(statement: &Statement) -> Result<Object> {
 fn eval_expression(expression: &Expression) -> Result<Object> {
     match expression {
         Expression::Int { value } => Ok(Object::Int(*value)),
-        Expression::Bool { value: true } => Ok(Object::True),
-        Expression::Bool { value: false } => Ok(Object::False),
+        Expression::Bool { value: true } => Ok(Object::Bool(true)),
+        Expression::Bool { value: false } => Ok(Object::Bool(false)),
         Expression::Prefix { op, expr } => {
             match (op, eval_expression(expr)?) {
                 (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
-                (Token::BANG, Object::True) => Ok(Object::False),
-                (Token::BANG, Object::False) => Ok(Object::True),
+                (Token::BANG, Object::Bool(value)) => Ok(Object::Bool(!value)),
                 (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
             }
-        }
+        },
+        Expression::Infix { op, left, right } => {
+            match (op, eval_expression(left)?, eval_expression(right)?) {
+                (Token::EQ, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 == v2)),
+                (Token::EQ, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 == v2)),
+                (Token::LT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 < v2)),
+                (Token::GT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 > v2)),
+                (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
+                (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
+                (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
+                (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
+                (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
+                (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
+                (_, obj1, obj2) => Err(EvalError::InfixNotApplicable(format!("op: {:?} left: {:?} right: {:?}", op, obj1, obj2))),
+            }
+        },
         _ => Err(EvalError::Unsupported(format!("{:?}", expression))),
     }
 }
@@ -69,14 +83,36 @@ mod tests {
             -5;
             !false;
             !true;
+            1+2;
+            1+2*3;
+            2 * (3+4);
+            (1+2) * (3+4);
+            (3+4) / (1+2);
+            1 + 2 == 3;
+            1 + 2 != 3;
+            1 < 2;
+            1 > 2;
+            true != false;
+            true == false;
         ");
         let expected = vec![
             Object::Int(5),
-            Object::True,
-            Object::False,
+            Object::Bool(true),
+            Object::Bool(false),
             Object::Int(-5),
-            Object::True,
-            Object::False,
+            Object::Bool(true),
+            Object::Bool(false),
+            Object::Int(3),
+            Object::Int(7),
+            Object::Int(14),
+            Object::Int(21),
+            Object::Int(2),
+            Object::Bool(true),
+            Object::Bool(false),
+            Object::Bool(true),
+            Object::Bool(false),
+            Object::Bool(true),
+            Object::Bool(false),
         ];
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
