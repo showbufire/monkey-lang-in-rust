@@ -15,6 +15,7 @@ pub enum EvalError {
     Unsupported(String),
     PrefixNotApplicable(String),
     InfixNotApplicable(String),
+    ConditionNotBoolean(String),
 }
 
 type Result<T> = std::result::Result<T, EvalError>;
@@ -35,6 +36,7 @@ fn eval_statements(statements: &Vec<Statement>) -> Result<Object> {
 fn eval_statement(statement: &Statement) -> Result<Object> {
     match statement {
         Statement::Expr { expr } => eval_expression(expr),
+        Statement::Block { statements } => eval_statements(statements),
         _ => Err(EvalError::Unsupported(format!("{:?}", statement))),
     }
 }
@@ -44,27 +46,29 @@ fn eval_expression(expression: &Expression) -> Result<Object> {
         Expression::Int { value } => Ok(Object::Int(*value)),
         Expression::Bool { value: true } => Ok(Object::Bool(true)),
         Expression::Bool { value: false } => Ok(Object::Bool(false)),
-        Expression::Prefix { op, expr } => {
-            match (op, eval_expression(expr)?) {
-                (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
-                (Token::BANG, Object::Bool(value)) => Ok(Object::Bool(!value)),
-                (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
-            }
+        Expression::Prefix { op, expr } => match (op, eval_expression(expr)?) {
+            (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
+            (Token::BANG, Object::Bool(value)) => Ok(Object::Bool(!value)),
+            (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
         },
-        Expression::Infix { op, left, right } => {
-            match (op, eval_expression(left)?, eval_expression(right)?) {
-                (Token::EQ, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 == v2)),
-                (Token::EQ, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 == v2)),
-                (Token::LT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 < v2)),
-                (Token::GT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 > v2)),
-                (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
-                (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
-                (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
-                (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
-                (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
-                (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
-                (_, obj1, obj2) => Err(EvalError::InfixNotApplicable(format!("op: {:?} left: {:?} right: {:?}", op, obj1, obj2))),
-            }
+        Expression::Infix { op, left, right } => match (op, eval_expression(left)?, eval_expression(right)?) {
+            (Token::EQ, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 == v2)),
+            (Token::EQ, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 == v2)),
+            (Token::LT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 < v2)),
+            (Token::GT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 > v2)),
+            (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
+            (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
+            (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
+            (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
+            (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
+            (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
+            (_, obj1, obj2) => Err(EvalError::InfixNotApplicable(format!("op: {:?} left: {:?} right: {:?}", op, obj1, obj2))),
+        },
+        Expression::If { condition, consequence, alternative } => match eval_expression(condition)? {
+            Object::Bool(true) => eval_statement(consequence.as_ref()),
+            Object::Bool(false) if alternative.is_some() => eval_statement(alternative.as_ref().unwrap()),
+            Object::Bool(false) if alternative.is_none() => Ok(Object::Null),
+            obj => Err(EvalError::ConditionNotBoolean(format!("{:?}", obj))),
         },
         _ => Err(EvalError::Unsupported(format!("{:?}", expression))),
     }
@@ -94,6 +98,9 @@ mod tests {
             1 > 2;
             true != false;
             true == false;
+            if (true) { 1 } else { 2 };
+            if (!true) { 1 } else { 2 };
+            if (false) { 1 };
         ");
         let expected = vec![
             Object::Int(5),
@@ -113,6 +120,9 @@ mod tests {
             Object::Bool(false),
             Object::Bool(true),
             Object::Bool(false),
+            Object::Int(1),
+            Object::Int(2),
+            Object::Null,
         ];
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
