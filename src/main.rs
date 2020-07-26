@@ -1,6 +1,7 @@
 mod lexer;
 mod parser;
 mod ast;
+mod evaluator;
 
 use crate::lexer::Lexer;
 use crate::parser::Parser;

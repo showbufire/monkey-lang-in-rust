@@ -1,14 +1,12 @@
 use crate::lexer::{Token, Lexer};
 use crate::ast::*;
 
-#[allow(dead_code)]
 pub struct Parser {
     lexer: Lexer,
     cur_token: Token,
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub enum ParserError {
     UnexpectedToken { expected: Token, actual: Token },
     NotLeft(Token),
@@ -18,7 +16,6 @@ pub enum ParserError {
     NotPrefixOp(Token),
 }
 
-#[allow(dead_code)]
 type Result<T> = std::result::Result<T, ParserError>;
 
 #[derive(PartialOrd, PartialEq)]
