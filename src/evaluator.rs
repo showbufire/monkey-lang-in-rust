@@ -6,12 +6,36 @@ use crate::lexer::Token;
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Object {
+#[derive(Clone)]
+pub enum Object<'a> {
     Bool(bool),
     Int(i64),
     Null,
+    Function { func: &'a Expression, env: Env<'a> },
+}
+
+impl<'a> fmt::Debug for Object<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Object::Bool(bool_value) => f.debug_struct("Object").field("value", bool_value).finish(),
+            Object::Int(int_value) => f.debug_struct("Object").field("value", int_value).finish(),
+            Object::Null => f.debug_struct("Object").field("value", &"null").finish(),
+            Object::Function{ func, env: _ } => f.debug_struct("Object").field("value", func).finish(),
+        }
+    }
+}
+
+impl<'a> PartialEq for Object<'a> {
+    fn eq(&self, other: &Object) -> bool {
+        match (self, other) {
+            (Object::Bool(v1), Object::Bool(v2)) => v1 == v2,
+            (Object::Int(v1), Object::Int(v2)) => v1 == v2,
+            (Object::Null, Object::Null) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -23,14 +47,15 @@ pub enum EvalError {
     UnbindedVariable(String),
 }
 
-struct Environment {
-    parent: Option<Env>,
-    bindings: HashMap<String, Object>,
+pub struct Environment<'a> {
+    parent: Option<Env<'a>>,
+    bindings: HashMap<String, Object<'a>>,
 }
 
-struct Env(Rc<RefCell<Environment>>);
+#[derive(Clone)]
+pub struct Env<'a>(Rc<RefCell<Environment<'a>>>);
 
-impl Environment {
+impl<'a> Environment<'a> {
     fn new() -> Self {
         Self {
             parent: None,
@@ -38,21 +63,23 @@ impl Environment {
         }
     }
 
-    fn insert(&mut self, key: String, value: Object) {
+    #[allow(dead_code)]
+    fn insert(&mut self, key: String, value: Object<'a>) {
         self.bindings.insert(key, value);
     }
 
-    fn get(&self, key: &String) -> Option<&Object> {
+    fn get(&self, key: &str) -> Option<&Object<'a>> {
         self.bindings.get(key)
     }
 }
 
-impl Env {
+impl<'a> Env<'a> {
     fn new() -> Self {
         Env(Rc::new(RefCell::new(Environment::new())))
     }
 
-    fn of(environment: Environment) -> Self {
+    #[allow(dead_code)]
+    fn of(environment: Environment<'a>) -> Self {
         Env(Rc::new(RefCell::new(environment)))
     }
 
@@ -62,25 +89,30 @@ impl Env {
         Env(Rc::new(RefCell::new(environment)))
     }
 
-    fn find(&self, key: &String) -> Option<Object> {
+    fn find(&self, key: &str) -> Option<Object<'a>> {
         let environment = self.0.borrow();
         let value = environment.get(key);
         match (value, &self.0.borrow().parent) {
             (Some(obj), _) => Some(obj.clone()),
-            (None, Some(env)) => env.find(key),
+            (None, Some(env)) => env.find(key).clone(),
             (None, None) => None,
         }
+    }
+
+    fn insert(&self, key: String, value: Object<'a>) {
+        let mut environment = self.0.borrow_mut();
+        environment.insert(key, value);
     }
 }
 
 type Result<T> = std::result::Result<T, EvalError>;
 
 #[allow(dead_code)]
-pub fn eval(program: &Program) -> Result<Object> {
+pub fn eval<'a>(program: &'a Program) -> Result<Object<'a>> {
     return eval_statements(&program.statements, &Env::new());
 }
 
-fn eval_statements(statements: &Vec<Statement>, env: &Env) -> Result<Object> {
+fn eval_statements<'a>(statements: &'a Vec<Statement>, env: &Env<'a>) -> Result<Object<'a>> {
     let mut result = Object::Null;
     for statement in statements {
         result = eval_statement(statement, env)?;
@@ -88,15 +120,20 @@ fn eval_statements(statements: &Vec<Statement>, env: &Env) -> Result<Object> {
     Ok(result)
 }
 
-fn eval_statement(statement: &Statement, env: &Env) -> Result<Object> {
+fn eval_statement<'a>(statement: &'a Statement, env: &Env<'a>) -> Result<Object<'a>> {
     match statement {
         Statement::Expr { expr } => eval_expression(expr, env),
         Statement::Block { statements } => eval_statements(statements, &env.enter()),
+        Statement::Let { identifier: Expression::Identifier { name }, value } => {
+            let value_obj = eval_expression(value, env)?;
+            env.insert(name.clone(), value_obj.clone());
+            Ok(value_obj)
+        },
         _ => Err(EvalError::Unsupported(format!("{:?}", statement))),
     }
 }
 
-fn eval_expression(expression: &Expression, env: &Env) -> Result<Object> {
+fn eval_expression<'a>(expression: &'a Expression, env: &Env<'a>) -> Result<Object<'a>> {
     match expression {
         Expression::Int { value } => Ok(Object::Int(*value)),
         Expression::Bool { value: true } => Ok(Object::Bool(true)),
@@ -126,9 +163,10 @@ fn eval_expression(expression: &Expression, env: &Env) -> Result<Object> {
             obj => Err(EvalError::ConditionNotBoolean(format!("{:?}", obj))),
         },
         Expression::Identifier { name } => match env.find(name) {
-            Some(obj) => Ok(obj.clone()),
+            Some(obj) => Ok(obj),
             None => Err(EvalError::UnbindedVariable(name.clone())),
         },
+        Expression::Function { parameters: _, body: _ } => Ok(Object::Function { func: expression, env: env.clone() }),
         _ => Err(EvalError::Unsupported(format!("{:?}", expression))),
     }
 }
@@ -190,7 +228,7 @@ mod tests {
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         let parser_result = parser.parse_program();
-        let env = test_environment();
+        let env = generate_environment();
 
         assert_eq!(parser_result.is_ok(), true, "err: {:?}", parser_result.unwrap_err());
         if let Ok(program) = parser_result {
@@ -208,7 +246,7 @@ mod tests {
         }
     }
 
-    fn test_environment() -> Env {
+    fn generate_environment<'a>() -> Env<'a> {
         let mut environment = Environment::new();
         let keys = vec![String::from("x"), String::from("y"), String::from("z"), String::from("t"), String::from("f")];
         let values = vec![Object::Int(1), Object::Int(2), Object::Int(4), Object::Bool(true), Object::Bool(false)];
@@ -216,5 +254,41 @@ mod tests {
             environment.insert(x.clone(), y.clone())
         }
         Env::of(environment)
+    }
+
+    #[test]
+    fn test_function_literal() {
+        let input = String::from("
+            let x = 1;
+            let y = 2;
+            let foo = fn() {
+                x
+            };
+            let x = 10;
+            foo
+        ");
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let parser_result = parser.parse_program();
+        assert_eq!(parser_result.is_ok(), true, "err: {:?}", parser_result.unwrap_err());
+        let program = parser_result.unwrap();
+        let eval_result = eval(&program);
+        assert_eq!(eval_result.is_ok(), true, "err: {:?}", eval_result.unwrap_err());
+        let object = eval_result.unwrap();
+        if let Object::Function { func, env } = object {
+            let expected_function = Expression::Function {
+                parameters: vec![],
+                body: Box::new(Statement::Block {
+                        statements: vec![
+                            Statement::Expr { expr: Expression::Identifier{ name: String::from("x")}},
+                        ],
+                })
+            };
+            assert_eq!(func, &expected_function);
+            assert_eq!(env.find("y"), Some(Object::Int(2)));
+            assert_eq!(env.find("x"), Some(Object::Int(10)));
+        } else {
+            assert!(false, "Not a function literal #{:?}", object);
+        }
     }
 }
