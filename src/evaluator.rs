@@ -1,6 +1,4 @@
 use crate::ast::*;
-use crate::lexer::Lexer;
-use crate::parser::Parser;
 use crate::lexer::Token;
 
 use std::rc::Rc;
@@ -27,7 +25,7 @@ impl<'a> fmt::Debug for Object<'a> {
     }
 }
 
-impl<'a> PartialEq for Object<'a> {
+impl<'a, 'b> PartialEq<Object<'b>> for Object<'a> {
     fn eq(&self, other: &Object) -> bool {
         match (self, other) {
             (Object::Bool(v1), Object::Bool(v2)) => v1 == v2,
@@ -45,6 +43,8 @@ pub enum EvalError {
     InfixNotApplicable(String),
     ConditionNotBoolean(String),
     UnbindedVariable(String),
+    CallNonFunction(String),
+    CallArgLengthMismatch(String),
 }
 
 pub struct Environment<'a> {
@@ -167,13 +167,31 @@ fn eval_expression<'a>(expression: &'a Expression, env: &Env<'a>) -> Result<Obje
             None => Err(EvalError::UnbindedVariable(name.clone())),
         },
         Expression::Function { parameters: _, body: _ } => Ok(Object::Function { func: expression, env: env.clone() }),
-        _ => Err(EvalError::Unsupported(format!("{:?}", expression))),
+        Expression::Call { function, arguments } => match &eval_expression(function, env)? {
+            Object::Function { func: Expression::Function { parameters, body }, env: closure } => {
+                if parameters.len() != arguments.len() {
+                    Err(EvalError::CallArgLengthMismatch(format!("function: {:?}, arguments: {:?}", function, arguments)))
+                } else {
+                    let new_env = closure.enter();
+                    for (arg, param) in arguments.iter().zip(parameters.iter()) {
+                        let arg_obj = eval_expression(arg, env)?;
+                        if let Expression::Identifier { name } = param {
+                            new_env.insert(name.clone(), arg_obj);
+                        }
+                    }
+                    eval_statement(body, &new_env)
+                }
+            },
+            _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::evaluator::*;
+    use crate::lexer::Lexer;
+    use crate::parser::Parser;
 
     #[test]
     fn test_single_expression() {
@@ -290,5 +308,43 @@ mod tests {
         } else {
             assert!(false, "Not a function literal #{:?}", object);
         }
+    }
+
+    #[test]
+    fn test_call_expression() {
+        let input = String::from("
+            let x = 3;
+            let foo = fn (y) { x + y };
+            foo(10)
+        ");
+        let expected = Object::Int(13);
+
+        let input2 = String::from("
+            fn(x, y) { x + y } (1, 100);
+        ");
+        let expected2 = Object::Int(101);
+
+        let input3 = String::from("
+            let x = 1;
+            let foo = fn(x) { x };
+            foo(3) + x
+        ");
+        let expected3 = Object::Int(4);
+
+        check_full_program(input, expected);
+        check_full_program(input2, expected2);
+        check_full_program(input3, expected3);
+    }
+
+    fn check_full_program(input: String, expected: Object) {
+        let lexer = Lexer::new(input);
+        let mut parser = Parser::new(lexer);
+        let parser_result = parser.parse_program();
+        assert_eq!(parser_result.is_ok(), true, "err: {:?}", parser_result.unwrap_err());
+        let program = parser_result.unwrap();
+        let eval_result = eval(&program);
+        assert_eq!(eval_result.is_ok(), true, "err: {:?}", eval_result.unwrap_err());
+        let object = eval_result.unwrap();
+        assert_eq!(object, expected);
     }
 }
