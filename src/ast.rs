@@ -5,7 +5,7 @@ pub struct Program {
     pub statements: Vec<Statement>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expression {
     Identifier { name: String },
     Int { value: i64 },
@@ -24,7 +24,7 @@ pub enum Expression {
     },
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Statement {
     Let { identifier: Expression, value: Expression },
     Return { value: Expression },
