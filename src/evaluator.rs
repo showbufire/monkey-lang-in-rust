@@ -12,15 +12,17 @@ pub enum Object {
     Int(i64),
     Null,
     Function { func: Expression, env: Env },
+    Return(Box<Object>),
 }
 
 impl fmt::Debug for Object {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Object::Bool(bool_value) => f.debug_struct("Object").field("value", bool_value).finish(),
-            Object::Int(int_value) => f.debug_struct("Object").field("value", int_value).finish(),
+            Object::Bool(bool_value) => f.debug_struct("Object").field("bool", bool_value).finish(),
+            Object::Int(int_value) => f.debug_struct("Object").field("int", int_value).finish(),
             Object::Null => f.debug_struct("Object").field("value", &"null").finish(),
-            Object::Function{ func, env: _ } => f.debug_struct("Object").field("value", func).finish(),
+            Object::Function{ func, env: _ } => f.debug_struct("Object").field("func", func).finish(),
+            Object::Return(ret) => f.debug_struct("Object").field("ret", ret).finish(),
         }
     }
 }
@@ -120,6 +122,9 @@ fn eval_statements(statements: & Vec<Statement>, env: &Env) -> Result<Object> {
     let mut result = Object::Null;
     for statement in statements {
         result = eval_statement(statement, env)?;
+        if let Object::Return(_) = result {
+            break;
+        }
     }
     Ok(result)
 }
@@ -133,6 +138,10 @@ fn eval_statement(statement: & Statement, env: &Env) -> Result<Object> {
             env.insert(name.clone(), value_obj.clone());
             Ok(value_obj)
         },
+        Statement::Return { value } => {
+            let value_obj = eval_expression(value, env)?;
+            Ok(Object::Return(Box::new(value_obj)))
+        }
         _ => Err(EvalError::Unsupported(format!("{:?}", statement))),
     }
 }
@@ -183,7 +192,11 @@ fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
                             new_env.insert(name.clone(), arg_obj);
                         }
                     }
-                    eval_statement(body, &new_env)
+                    let call_result = eval_statement(body, &new_env)?;
+                    match call_result {
+                        Object::Return(ret) => Ok(*ret),
+                        _ => Ok(call_result),
+                    }
                 }
             },
             _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
@@ -338,6 +351,64 @@ mod tests {
         check_full_program(input, expected);
         check_full_program(input2, expected2);
         check_full_program(input3, expected3);
+    }
+
+    #[test]
+    fn test_return() {
+        let input = String::from("
+            fn() {
+                return 42;
+                10
+            }();
+        ");
+        let expected = Object::Int(42);
+
+        let input2 = String::from("
+            fn(x) {
+                return fn(y) { x * y };
+            } (10)(20);
+        ");
+        let expected2 = Object::Int(200);
+
+        let input3 = String::from("
+            let fib = fn(n) {
+                if (n == 0) {
+                    return 0;
+                } else {
+                    if (n == 1) {
+                        return 1;
+                    }
+                }
+                return fib(n-2) + fib(n-1);
+            };
+            fib(10)
+        ");
+        let expected3 = Object::Int(55);
+
+        let input4 = String::from("
+            let twice = fn(f) { fn(x) { return f(f(x)); } };
+            let double = fn(x) { return x * 2; };
+
+            twice(double)(100)
+        ");
+        let expected4 = Object::Int(400);
+
+        let input5 = String::from("
+            let foo = fn(x) {
+                if (x < 10) {
+                    return 1;
+                }
+                return 2;
+            };
+            foo(3)
+        ");
+        let expected5 = Object::Int(1);
+
+        check_full_program(input, expected);
+        check_full_program(input2, expected2);
+        check_full_program(input3, expected3);
+        check_full_program(input4, expected4);
+        check_full_program(input5, expected5);
     }
 
     fn check_full_program(input: String, expected: Object) {
