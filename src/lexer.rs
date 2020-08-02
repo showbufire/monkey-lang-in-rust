@@ -34,6 +34,7 @@ pub enum Token {
     SEMICOLON,
     SLASH,
     TRUE,
+    STRING(String),
 }
 
 pub struct Lexer {
@@ -110,6 +111,16 @@ impl Lexer {
         Token::INT(x)
     }
 
+    fn next_string(&mut self) -> Token {
+        let mut s = String::new();
+        self.read_char();
+        while self.ch != b'"' {
+            s.push(self.ch as char);
+            self.read_char();
+        }
+        Token::STRING(s)
+    }
+
     pub fn next_token(&mut self) -> Token {
         self.skip_whitespaces();
 
@@ -140,6 +151,7 @@ impl Lexer {
                     }
             b'a'..= b'z' | b'A'..= b'Z'=> self.next_identifier_or_keyword(),
             b'0'..= b'9' => self.next_int(),
+            b'"' => self.next_string(),
             0 => Token::EOF,
             _ => panic!("unknown char {}", String::from_utf8(vec![self.ch]).unwrap()),
         };
@@ -204,6 +216,8 @@ mod tests {
 
             10 == 10;
             10 != 9;
+            \"foo\"
+            \"\"
         ");
         let mut lexer = Lexer::new(input);
 
@@ -281,6 +295,8 @@ mod tests {
             Token::NE,
             Token::INT(9),
             Token::SEMICOLON,
+            Token::STRING(String::from("foo")),
+            Token::STRING(String::from("")),
             Token::EOF,
         ];
 

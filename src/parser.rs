@@ -13,6 +13,7 @@ pub enum ParserError {
     NotIdentifier(Token),
     NotInt(Token),
     NotBool(Token),
+    NotString(Token),
     NotPrefixOp(Token),
 }
 
@@ -124,6 +125,7 @@ impl Parser {
         let mut left = match self.cur_token {
             Token::IDENT(_) => self.parse_identifier()?,
             Token::INT(_) => self.parse_int()?,
+            Token::STRING(_) => self.parse_string()?,
             Token::TRUE | Token::FALSE => self.parse_bool()?,
             Token::LPAREN => self.parse_grouped_expression()?,
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
@@ -245,6 +247,18 @@ impl Parser {
         }
     }
 
+    fn parse_string(&mut self) -> Result<Expression> {
+        let result = if let Token::STRING(s) = &self.cur_token {
+            Ok(Expression::StringLiteral(s.clone()))
+        } else {
+            Err(ParserError::NotString(self.cur_token.clone()))
+        };
+        if result.is_ok() {
+            self.next_token();
+        }
+        result
+    }
+
     fn expect_token(&mut self, expected: Token) -> Result<()> {
         if self.cur_token != expected {
             return Err(ParserError::UnexpectedToken{ expected, actual: self.cur_token.clone() });
@@ -342,6 +356,7 @@ mod tests {
         let input = String::from("
             10;
             foobar;
+            \"foo\";
             !x;
             -5;
             1 + 2;
@@ -354,6 +369,7 @@ mod tests {
         let expected = vec![
             Expression::Int { value: 10 },
             Expression::Identifier { name: String::from("foobar") },
+            Expression::StringLiteral(String::from("foo")),
             Expression::Prefix {
                 op: Token::BANG,
                 expr: Box::new(Expression::Identifier { name: String::from("x")}),

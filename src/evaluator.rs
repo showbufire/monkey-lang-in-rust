@@ -10,6 +10,7 @@ use std::fmt;
 pub enum Object {
     Bool(bool),
     Int(i64),
+    StringLiteral(String),
     Null,
     Function { func: Expression, env: Env },
     Return(Box<Object>),
@@ -23,6 +24,7 @@ impl fmt::Debug for Object {
             Object::Null => f.debug_struct("Object").field("value", &"null").finish(),
             Object::Function{ func, env: _ } => f.debug_struct("Object").field("func", func).finish(),
             Object::Return(ret) => f.debug_struct("Object").field("ret", ret).finish(),
+            Object::StringLiteral(str_value) => f.debug_struct("Object").field("str", str_value).finish(),
         }
     }
 }
@@ -32,6 +34,7 @@ impl PartialEq for Object {
         match (self, other) {
             (Object::Bool(v1), Object::Bool(v2)) => v1 == v2,
             (Object::Int(v1), Object::Int(v2)) => v1 == v2,
+            (Object::StringLiteral(v1), Object::StringLiteral(v2)) => v1 == v2,
             (Object::Null, Object::Null) => true,
             _ => false,
         }
@@ -164,6 +167,11 @@ fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
             (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
             (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
             (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
+            (Token::PLUS, Object::StringLiteral(v1), Object::StringLiteral(v2)) => {
+                let mut v = v1.clone();
+                v.push_str(&v2);
+                Ok(Object::StringLiteral(v))
+            },
             (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
             (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
             (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
@@ -201,6 +209,7 @@ fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
             },
             _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
         },
+        Expression::StringLiteral(s) => Ok(Object::StringLiteral(s.clone())),
     }
 }
 
@@ -213,6 +222,8 @@ mod tests {
     #[test]
     fn test_single_expression() {
         let input = String::from("
+            \"foo\";
+            \"foo\"+\"bar\";
             5;
             true;
             false;
@@ -237,6 +248,8 @@ mod tests {
             x + y;
         ");
         let expected = vec![
+            Object::StringLiteral(String::from("foo")),
+            Object::StringLiteral(String::from("foobar")),
             Object::Int(5),
             Object::Bool(true),
             Object::Bool(false),

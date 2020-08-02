@@ -9,6 +9,7 @@ pub struct Program {
 pub enum Expression {
     Identifier { name: String },
     Int { value: i64 },
+    StringLiteral(String),
     Prefix { op: Token, expr: Box<Expression> },
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
     Bool { value: bool },
