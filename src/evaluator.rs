@@ -14,6 +14,12 @@ pub enum Object {
     Null,
     Function { func: Expression, env: Env },
     Return(Box<Object>),
+    BuiltInFunction(BuiltIn),
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BuiltIn {
+    LEN,
 }
 
 impl fmt::Debug for Object {
@@ -25,18 +31,7 @@ impl fmt::Debug for Object {
             Object::Function{ func, env: _ } => f.debug_struct("Object").field("func", func).finish(),
             Object::Return(ret) => f.debug_struct("Object").field("ret", ret).finish(),
             Object::StringLiteral(str_value) => f.debug_struct("Object").field("str", str_value).finish(),
-        }
-    }
-}
-
-impl PartialEq for Object {
-    fn eq(&self, other: &Object) -> bool {
-        match (self, other) {
-            (Object::Bool(v1), Object::Bool(v2)) => v1 == v2,
-            (Object::Int(v1), Object::Int(v2)) => v1 == v2,
-            (Object::StringLiteral(v1), Object::StringLiteral(v2)) => v1 == v2,
-            (Object::Null, Object::Null) => true,
-            _ => false,
+            Object::BuiltInFunction(built_in) => f.debug_struct("Object").field("built_in", built_in).finish(),
         }
     }
 }
@@ -49,7 +44,7 @@ pub enum EvalError {
     ConditionNotBoolean(String),
     UnbindedVariable(String),
     CallNonFunction(String),
-    CallArgLengthMismatch(String),
+    InvalidArguments(String),
 }
 
 pub struct Environment {
@@ -110,6 +105,13 @@ impl Env {
     }
 }
 
+fn find_built_in(name: &str) -> Option<Object> {
+    match name {
+        "len" => Some(Object::BuiltInFunction(BuiltIn::LEN)),
+        _ => None,
+    }
+}
+
 type Result<T> = std::result::Result<T, EvalError>;
 
 #[allow(dead_code)]
@@ -136,11 +138,7 @@ fn eval_statement(statement: & Statement, env: &Env) -> Result<Object> {
     match statement {
         Statement::Expr { expr } => eval_expression(expr, env),
         Statement::Block { statements } => eval_statements(statements, env),
-        Statement::Let { identifier: Expression::Identifier { name }, value } => {
-            let value_obj = eval_expression(value, env)?;
-            env.insert(name.clone(), value_obj.clone());
-            Ok(value_obj)
-        },
+        Statement::Let { identifier: Expression::Identifier { name }, value } => eval_let_statement(name, value, env),
         Statement::Return { value } => {
             let value_obj = eval_expression(value, env)?;
             Ok(Object::Return(Box::new(value_obj)))
@@ -149,67 +147,116 @@ fn eval_statement(statement: & Statement, env: &Env) -> Result<Object> {
     }
 }
 
+fn eval_let_statement(name: &String, value: &Expression, env: &Env) -> Result<Object> {
+    let value_obj = eval_expression(value, env)?;
+    env.insert(name.clone(), value_obj.clone());
+    Ok(value_obj)
+}
+
 fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
     match expression {
         Expression::Int { value } => Ok(Object::Int(*value)),
         Expression::Bool { value: true } => Ok(Object::Bool(true)),
         Expression::Bool { value: false } => Ok(Object::Bool(false)),
-        Expression::Prefix { op, expr } => match (op, eval_expression(expr, env)?) {
-            (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
-            (Token::BANG, Object::Bool(value)) => Ok(Object::Bool(!value)),
-            (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
-        },
-        Expression::Infix { op, left, right } => match (op, eval_expression(left, env)?, eval_expression(right, env)?) {
-            (Token::EQ, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 == v2)),
-            (Token::EQ, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 == v2)),
-            (Token::LT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 < v2)),
-            (Token::GT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 > v2)),
-            (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
-            (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
-            (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
-            (Token::PLUS, Object::StringLiteral(v1), Object::StringLiteral(v2)) => {
-                let mut v = v1.clone();
-                v.push_str(&v2);
-                Ok(Object::StringLiteral(v))
-            },
-            (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
-            (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
-            (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
-            (_, obj1, obj2) => Err(EvalError::InfixNotApplicable(format!("op: {:?} left: {:?} right: {:?}", op, obj1, obj2))),
-        },
-        Expression::If { condition, consequence, alternative } => match eval_expression(condition, env)? {
-            Object::Bool(true) => eval_statement(consequence.as_ref(), env),
-            Object::Bool(false) if alternative.is_some() => eval_statement(alternative.as_ref().unwrap(), env),
-            Object::Bool(false) if alternative.is_none() => Ok(Object::Null),
-            obj => Err(EvalError::ConditionNotBoolean(format!("{:?}", obj))),
-        },
-        Expression::Identifier { name } => match env.find(name) {
-            Some(obj) => Ok(obj),
-            None => Err(EvalError::UnbindedVariable(name.clone())),
-        },
+        Expression::Prefix { op, expr } => eval_prefix_expression(op, expr, env),
+        Expression::Infix { op, left, right } => eval_infix_expression(op, left, right, env),
+        Expression::If { condition, consequence, alternative } => eval_if_expression(condition, consequence, alternative, env),
+        Expression::Identifier { name } => eval_identifier(name, env),
         Expression::Function { parameters: _, body: _ } => Ok(Object::Function { func: expression.clone(), env: env.clone() }),
-        Expression::Call { function, arguments } => match &eval_expression(function, env)? {
-            Object::Function { func: Expression::Function { parameters, body }, env: closure } => {
-                if parameters.len() != arguments.len() {
-                    Err(EvalError::CallArgLengthMismatch(format!("function: {:?}, arguments: {:?}", function, arguments)))
-                } else {
-                    let new_env = closure.enter();
-                    for (arg, param) in arguments.iter().zip(parameters.iter()) {
-                        let arg_obj = eval_expression(arg, env)?;
-                        if let Expression::Identifier { name } = param {
-                            new_env.insert(name.clone(), arg_obj);
-                        }
-                    }
-                    let call_result = eval_statement(body, &new_env)?;
-                    match call_result {
-                        Object::Return(ret) => Ok(*ret),
-                        _ => Ok(call_result),
+        Expression::Call { function, arguments } => eval_call_expression(function, arguments, env),
+        Expression::StringLiteral(s) => Ok(Object::StringLiteral(s.clone())),
+    }
+}
+
+fn eval_call_expression(function: &Box<Expression>, arguments: &Vec<Expression>, env: &Env) -> Result<Object> {
+    match &eval_expression(function, env)? {
+        Object::Function { func: Expression::Function { parameters, body }, env: closure } => {
+            if parameters.len() != arguments.len() {
+                Err(EvalError::InvalidArguments(format!("function: {:?}, arguments: {:?}", function, arguments)))
+            } else {
+                let new_env = closure.enter();
+                for (arg, param) in arguments.iter().zip(parameters.iter()) {
+                    let arg_obj = eval_expression(arg, env)?;
+                    if let Expression::Identifier { name } = param {
+                        new_env.insert(name.clone(), arg_obj);
                     }
                 }
-            },
-            _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
+                let call_result = eval_statement(body, &new_env)?;
+                match call_result {
+                    Object::Return(ret) => Ok(*ret),
+                    _ => Ok(call_result),
+                }
+            }
         },
-        Expression::StringLiteral(s) => Ok(Object::StringLiteral(s.clone())),
+        Object::BuiltInFunction(built_in) => {
+            let mut arg_objs = Vec::new();
+            for arg in arguments {
+                let arg_obj = eval_expression(&arg, env)?;
+                arg_objs.push(arg_obj)
+            }
+            match built_in {
+                BuiltIn::LEN => eval_built_in_len(arg_objs),
+            }
+        },
+        _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
+    }
+}
+
+fn eval_built_in_len(args: Vec<Object>) -> Result<Object> {
+    if args.len() != 1 {
+        return Err(EvalError::InvalidArguments(format!("built-in::len {:?}", args)));
+    }
+    match &args[0] {
+        Object::StringLiteral(s) => Ok(Object::Int(s.len() as i64)),
+        _ => Err(EvalError::InvalidArguments(format!("built-in::len {:?}", args))),
+    }
+}
+
+fn eval_identifier(name: &String, env: &Env) -> Result<Object> {
+    if let Some(obj) = env.find(name) {
+        Ok(obj)
+    } else if let Some(obj) = find_built_in(name) {
+        Ok(obj)
+    } else {
+        Err(EvalError::UnbindedVariable(name.clone()))
+    }
+}
+
+fn eval_if_expression(condition: &Expression, consequence: &Box<Statement>, alternative: &Option<Box<Statement>>, env: &Env) -> Result<Object> {
+    match eval_expression(condition, env)? {
+        Object::Bool(true) => eval_statement(consequence.as_ref(), env),
+        Object::Bool(false) if alternative.is_some() => eval_statement(alternative.as_ref().unwrap(), env),
+        Object::Bool(false) if alternative.is_none() => Ok(Object::Null),
+        obj => Err(EvalError::ConditionNotBoolean(format!("{:?}", obj))),
+    }
+}
+
+fn eval_infix_expression(op: &Token, left: &Expression, right: &Expression, env: &Env) -> Result<Object> {
+    match (op, eval_expression(left, env)?, eval_expression(right, env)?) {
+        (Token::EQ, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 == v2)),
+        (Token::EQ, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 == v2)),
+        (Token::LT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 < v2)),
+        (Token::GT, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 > v2)),
+        (Token::NE, Object::Bool(v1), Object::Bool(v2)) => Ok(Object::Bool(v1 != v2)),
+        (Token::NE, Object::Int(v1), Object::Int(v2)) => Ok(Object::Bool(v1 != v2)),
+        (Token::PLUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 + v2)),
+        (Token::PLUS, Object::StringLiteral(v1), Object::StringLiteral(v2)) => {
+            let mut v = v1.clone();
+            v.push_str(&v2);
+            Ok(Object::StringLiteral(v))
+        },
+        (Token::MINUS, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 - v2)),
+        (Token::ASTERISK, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 * v2)),
+        (Token::SLASH, Object::Int(v1), Object::Int(v2)) => Ok(Object::Int(v1 / v2)),
+        (_, obj1, obj2) => Err(EvalError::InfixNotApplicable(format!("op: {:?} left: {:?} right: {:?}", op, obj1, obj2))),
+    }
+}
+
+fn eval_prefix_expression(op: &Token, expr: &Expression, env: &Env) -> Result<Object> {
+    match (op, eval_expression(expr, env)?) {
+        (Token::MINUS, Object::Int(value)) => Ok(Object::Int(-value)),
+        (Token::BANG, Object::Bool(value)) => Ok(Object::Bool(!value)),
+        (_, obj) => Err(EvalError::PrefixNotApplicable(format!("op: {:?} obj: {:?}", op, obj))),
     }
 }
 
@@ -218,6 +265,18 @@ mod tests {
     use crate::evaluator::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+
+    impl PartialEq for Object {
+        fn eq(&self, other: &Object) -> bool {
+            match (self, other) {
+                (Object::Bool(v1), Object::Bool(v2)) => v1 == v2,
+                (Object::Int(v1), Object::Int(v2)) => v1 == v2,
+                (Object::StringLiteral(v1), Object::StringLiteral(v2)) => v1 == v2,
+                (Object::Null, Object::Null) => true,
+                _ => false,
+            }
+        }
+    }
 
     #[test]
     fn test_single_expression() {
@@ -244,8 +303,10 @@ mod tests {
             if (true) { 1 } else { 2 };
             if (!true) { 1 } else { 2 };
             if (false) { 1 };
-            t
+            t;
             x + y;
+            len(\"\");
+            len(\"foo\");
         ");
         let expected = vec![
             Object::StringLiteral(String::from("foo")),
@@ -271,6 +332,8 @@ mod tests {
             Object::Int(2),
             Object::Null,
             Object::Bool(true),
+            Object::Int(3),
+            Object::Int(0),
             Object::Int(3),
         ];
         let lexer = Lexer::new(input);
