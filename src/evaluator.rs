@@ -47,6 +47,8 @@ pub enum EvalError {
     UnbindedVariable(String),
     CallNonFunction(String),
     InvalidArguments(String),
+    InvalidIndex(String),
+    InvalidArray(String),
 }
 
 pub struct Environment {
@@ -167,7 +169,25 @@ fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
         Expression::Function { parameters: _, body: _ } => Ok(Object::Function { func: expression.clone(), env: env.clone() }),
         Expression::Call { function, arguments } => eval_call_expression(function, arguments, env),
         Expression::Array(members) => eval_array_expression(members, env),
+        Expression::ArrayMember{arr, idx} => eval_array_member(arr, idx, env),
         Expression::StringLiteral(s) => Ok(Object::StringLiteral(s.clone())),
+    }
+}
+
+fn eval_array_member(arr: &Box<Expression>, idx: &Box<Expression>, env: &Env) -> Result<Object> {
+    let arr_obj = eval_expression(arr, env)?;
+    let idx_obj = eval_expression(idx, env)?;
+
+    match (&arr_obj, &idx_obj) {
+        (Object::Array(members), Object::Int(i)) => {
+            if 0 <= *i && *i < members.len() as i64 {
+                Ok(members[*i as usize].clone())
+            } else {
+                Ok(Object::Null)
+            }
+        },
+        (Object::Array(_), _) => Err(EvalError::InvalidIndex(format!("{:?}", idx_obj))),
+        (_, _) => Err(EvalError::InvalidArray(format!("{:?}", arr_obj))),
     }
 }
 
@@ -296,6 +316,7 @@ mod tests {
     fn test_single_expression() {
         let input = String::from("
             [1, true];
+            [1, true][1];
             \"foo\";
             \"foo\"+\"bar\";
             5;
@@ -325,6 +346,7 @@ mod tests {
         ");
         let expected = vec![
             Object::Array(vec![Object::Int(1), Object::Bool(true)]),
+            Object::Bool(true),
             Object::StringLiteral(String::from("foo")),
             Object::StringLiteral(String::from("foobar")),
             Object::Int(5),
@@ -501,6 +523,19 @@ mod tests {
         check_full_program(input3, expected3);
         check_full_program(input4, expected4);
         check_full_program(input5, expected5);
+    }
+
+    #[test]
+    fn test_array() {
+        let input = String::from("
+            let firstQuad = fn(arr) {
+                arr[1-1] + arr[2*0] * 2 + arr[3+(-3)]
+            };
+            let nums = [13, 42];
+            firstQuad(nums)
+        ");
+        let expected = Object::Int(52);
+        check_full_program(input, expected);
     }
 
     fn check_full_program(input: String, expected: Object) {

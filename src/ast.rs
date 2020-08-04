@@ -11,6 +11,7 @@ pub enum Expression {
     Int { value: i64 },
     StringLiteral(String),
     Array(Vec<Expression>),
+    ArrayMember{ arr: Box<Expression>, idx: Box<Expression> },
     Prefix { op: Token, expr: Box<Expression> },
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
     Bool { value: bool },

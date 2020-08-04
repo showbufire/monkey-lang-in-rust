@@ -26,6 +26,7 @@ enum Precedence {
     PLUS,
     MULT,
     PREFIX,
+    MEMBER,
     CALL,
 }
 
@@ -35,6 +36,7 @@ fn op_precedence(token: &Token) -> Precedence {
         Token::PLUS | Token::MINUS => Precedence::PLUS,
         Token::ASTERISK | Token::SLASH => Precedence::MULT,
         Token::LPAREN => Precedence::CALL,
+        Token::LBRACKET => Precedence::MEMBER,
         _ => Precedence::LOWEST,
     }
 }
@@ -45,6 +47,7 @@ fn is_infix_op(token: &Token) -> bool {
         Token::PLUS | Token::MINUS => true,
         Token::ASTERISK | Token::SLASH => true,
         Token::LPAREN => true,
+        Token::LBRACKET => true,
         _ => false,
     }
 }
@@ -135,20 +138,32 @@ impl Parser {
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
-            if self.cur_token == Token::LPAREN {
-                let arguments = self.parse_parameters()?;
-                left = Expression::Call {
-                    function: Box::new(left),
-                    arguments: arguments
-                }
-            } else {
-                let op = self.pop_token();
-                let right = self.parse_expression(op_precedence(&op))?;
-                left = Expression::Infix {
-                    op,
-                    left: Box::new(left),
-                    right: Box::new(right),
-                }
+            match self.cur_token {
+                Token::LPAREN => {
+                    let arguments = self.parse_parameters()?;
+                    left = Expression::Call {
+                        function: Box::new(left),
+                        arguments: arguments
+                    }
+                },
+                Token::LBRACKET => {
+                    self.expect_token(Token::LBRACKET)?;
+                    let idx = self.parse_expression(Precedence::LOWEST)?;
+                    self.expect_token(Token::RBRACKET)?;
+                    left = Expression::ArrayMember {
+                        arr: Box::new(left),
+                        idx: Box::new(idx),
+                    }
+                },
+                _ => {
+                    let op = self.pop_token();
+                    let right = self.parse_expression(op_precedence(&op))?;
+                    left = Expression::Infix {
+                        op,
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    }
+                },
             };
         }
         Ok(left)
@@ -369,6 +384,7 @@ mod tests {
             \"foo\";
             [];
             [\"foo\", 1];
+            [1, 2][0];
             !x;
             -5;
             1 + 2;
@@ -384,6 +400,10 @@ mod tests {
             Expression::StringLiteral(String::from("foo")),
             Expression::Array(Vec::new()),
             Expression::Array(vec![Expression::StringLiteral(String::from("foo")), Expression::Int{value: 1}]),
+            Expression::ArrayMember {
+                arr: Box::new(Expression::Array(vec![Expression::Int { value: 1 }, Expression::Int { value: 2}])),
+                idx: Box::new(Expression::Int { value: 0 }),
+            },
             Expression::Prefix {
                 op: Token::BANG,
                 expr: Box::new(Expression::Identifier { name: String::from("x")}),
