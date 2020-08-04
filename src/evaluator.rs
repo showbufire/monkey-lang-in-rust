@@ -11,6 +11,7 @@ pub enum Object {
     Bool(bool),
     Int(i64),
     StringLiteral(String),
+    Array(Vec<Object>),
     Null,
     Function { func: Expression, env: Env },
     Return(Box<Object>),
@@ -32,6 +33,7 @@ impl fmt::Debug for Object {
             Object::Return(ret) => f.debug_struct("Object").field("ret", ret).finish(),
             Object::StringLiteral(str_value) => f.debug_struct("Object").field("str", str_value).finish(),
             Object::BuiltInFunction(built_in) => f.debug_struct("Object").field("built_in", built_in).finish(),
+            Object::Array(members) => f.debug_struct("Object").field("members", members).finish(),
         }
     }
 }
@@ -164,8 +166,19 @@ fn eval_expression(expression: & Expression, env: &Env) -> Result<Object> {
         Expression::Identifier { name } => eval_identifier(name, env),
         Expression::Function { parameters: _, body: _ } => Ok(Object::Function { func: expression.clone(), env: env.clone() }),
         Expression::Call { function, arguments } => eval_call_expression(function, arguments, env),
+        Expression::Array(members) => eval_array_expression(members, env),
         Expression::StringLiteral(s) => Ok(Object::StringLiteral(s.clone())),
     }
+}
+
+fn eval_array_expression(members: &Vec<Expression>, env: &Env) -> Result<Object> {
+    let mut member_objs = Vec::new();
+    for member in members {
+        let obj = eval_expression(member, env)?;
+        member_objs.push(obj);
+    }
+
+    Ok(Object::Array(member_objs))
 }
 
 fn eval_call_expression(function: &Box<Expression>, arguments: &Vec<Expression>, env: &Env) -> Result<Object> {
@@ -273,6 +286,7 @@ mod tests {
                 (Object::Int(v1), Object::Int(v2)) => v1 == v2,
                 (Object::StringLiteral(v1), Object::StringLiteral(v2)) => v1 == v2,
                 (Object::Null, Object::Null) => true,
+                (Object::Array(members1), Object::Array(members2)) => members1 == members2,
                 _ => false,
             }
         }
@@ -281,6 +295,7 @@ mod tests {
     #[test]
     fn test_single_expression() {
         let input = String::from("
+            [1, true];
             \"foo\";
             \"foo\"+\"bar\";
             5;
@@ -309,6 +324,7 @@ mod tests {
             len(\"foo\");
         ");
         let expected = vec![
+            Object::Array(vec![Object::Int(1), Object::Bool(true)]),
             Object::StringLiteral(String::from("foo")),
             Object::StringLiteral(String::from("foobar")),
             Object::Int(5),

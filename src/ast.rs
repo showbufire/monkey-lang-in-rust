@@ -10,6 +10,7 @@ pub enum Expression {
     Identifier { name: String },
     Int { value: i64 },
     StringLiteral(String),
+    Array(Vec<Expression>),
     Prefix { op: Token, expr: Box<Expression> },
     Infix { op: Token, left: Box<Expression>, right: Box<Expression> },
     Bool { value: bool },

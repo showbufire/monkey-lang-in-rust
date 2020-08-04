@@ -35,6 +35,8 @@ pub enum Token {
     SLASH,
     TRUE,
     STRING(String),
+    LBRACKET,
+    RBRACKET,
 }
 
 pub struct Lexer {
@@ -152,6 +154,8 @@ impl Lexer {
             b'a'..= b'z' | b'A'..= b'Z'=> self.next_identifier_or_keyword(),
             b'0'..= b'9' => self.next_int(),
             b'"' => self.next_string(),
+            b'[' => Token::LBRACKET,
+            b']' => Token::RBRACKET,
             0 => Token::EOF,
             _ => panic!("unknown char {}", String::from_utf8(vec![self.ch]).unwrap()),
         };
@@ -218,6 +222,7 @@ mod tests {
             10 != 9;
             \"foo\"
             \"\"
+            []
         ");
         let mut lexer = Lexer::new(input);
 
@@ -297,12 +302,13 @@ mod tests {
             Token::SEMICOLON,
             Token::STRING(String::from("foo")),
             Token::STRING(String::from("")),
+            Token::LBRACKET,
+            Token::RBRACKET,
             Token::EOF,
         ];
 
         for expected_token in expected {
             let token = lexer.next_token();
-            println!("{:?} {}", token, String::from_utf8(vec![lexer.ch]).unwrap());
             assert_eq!(token, expected_token);
         }
     }

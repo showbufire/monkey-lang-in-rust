@@ -131,6 +131,7 @@ impl Parser {
             Token::BANG | Token::MINUS => self.parse_prefix_expression()?,
             Token::IF => self.parse_if_expression()?,
             Token::FUNCTION => self.parse_function_expression()?,
+            Token::LBRACKET => self.parse_array()?,
             _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
@@ -153,6 +154,11 @@ impl Parser {
         Ok(left)
     }
 
+    fn parse_array(&mut self) -> Result<Expression> {
+        let members = self.parse_expression_list(Token::LBRACKET, Token::RBRACKET)?;
+        Ok(Expression::Array(members))
+    }
+
     fn parse_function_expression(&mut self) -> Result<Expression> {
         self.expect_token(Token::FUNCTION)?;
         let parameters = self.parse_parameters()?;
@@ -164,17 +170,21 @@ impl Parser {
     }
 
     fn parse_parameters(&mut self) -> Result<Vec<Expression>> {
-        self.expect_token(Token::LPAREN)?;
-        let mut parameters = Vec::new();
-        while self.cur_token != Token::EOF && self.cur_token != Token::RPAREN {
+        self.parse_expression_list(Token::LPAREN, Token::RPAREN)
+    }
+
+    fn parse_expression_list(&mut self, opening_token: Token, closing_token: Token) -> Result<Vec<Expression>> {
+        self.expect_token(opening_token)?;
+        let mut expr_list = Vec::new();
+        while self.cur_token != Token::EOF && self.cur_token != closing_token {
             let expr = self.parse_expression(Precedence::LOWEST)?;
-            parameters.push(expr);
+            expr_list.push(expr);
             if self.cur_token == Token::COMMA {
                 self.next_token();
             }
         }
-        self.expect_token(Token::RPAREN)?;
-        Ok(parameters)
+        self.expect_token(closing_token)?;
+        Ok(expr_list)
     }
 
     fn parse_if_expression(&mut self) -> Result<Expression> {
@@ -357,6 +367,8 @@ mod tests {
             10;
             foobar;
             \"foo\";
+            [];
+            [\"foo\", 1];
             !x;
             -5;
             1 + 2;
@@ -370,6 +382,8 @@ mod tests {
             Expression::Int { value: 10 },
             Expression::Identifier { name: String::from("foobar") },
             Expression::StringLiteral(String::from("foo")),
+            Expression::Array(Vec::new()),
+            Expression::Array(vec![Expression::StringLiteral(String::from("foo")), Expression::Int{value: 1}]),
             Expression::Prefix {
                 op: Token::BANG,
                 expr: Box::new(Expression::Identifier { name: String::from("x")}),
