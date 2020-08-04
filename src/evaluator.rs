@@ -241,6 +241,7 @@ fn eval_built_in_len(args: Vec<Object>) -> Result<Object> {
     }
     match &args[0] {
         Object::StringLiteral(s) => Ok(Object::Int(s.len() as i64)),
+        Object::Array(members) => Ok(Object::Int(members.len() as i64)),
         _ => Err(EvalError::InvalidArguments(format!("built-in::len {:?}", args))),
     }
 }
@@ -343,6 +344,7 @@ mod tests {
             x + y;
             len(\"\");
             len(\"foo\");
+            len([1, 2]);
         ");
         let expected = vec![
             Object::Array(vec![Object::Int(1), Object::Bool(true)]),
@@ -373,6 +375,7 @@ mod tests {
             Object::Int(3),
             Object::Int(0),
             Object::Int(3),
+            Object::Int(2),
         ];
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
