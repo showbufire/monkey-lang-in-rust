@@ -21,6 +21,7 @@ pub enum Object {
 #[derive(Clone, Debug, PartialEq)]
 pub enum BuiltIn {
     LEN,
+    PUSH,
 }
 
 impl fmt::Debug for Object {
@@ -112,6 +113,7 @@ impl Env {
 fn find_built_in(name: &str) -> Option<Object> {
     match name {
         "len" => Some(Object::BuiltInFunction(BuiltIn::LEN)),
+        "push" => Some(Object::BuiltInFunction(BuiltIn::PUSH)),
         _ => None,
     }
 }
@@ -229,9 +231,24 @@ fn eval_call_expression(function: &Box<Expression>, arguments: &Vec<Expression>,
             }
             match built_in {
                 BuiltIn::LEN => eval_built_in_len(arg_objs),
+                BuiltIn::PUSH => eval_built_in_push(arg_objs),
             }
         },
         _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
+    }
+}
+
+fn eval_built_in_push(args: Vec<Object>) -> Result<Object> {
+    if args.len() != 2 {
+        return Err(EvalError::InvalidArguments(format!("built-in::push {:?}", args)));
+    }
+    match (&args[0], &args[1]) {
+        (Object::Array(members), obj) => {
+            let mut new_arr = members.clone();
+            new_arr.push(obj.clone());
+            Ok(Object::Array(new_arr))
+        },
+        _ => Err(EvalError::InvalidArguments(format!("built-in::push {:?}", args))),
     }
 }
 
@@ -345,6 +362,7 @@ mod tests {
             len(\"\");
             len(\"foo\");
             len([1, 2]);
+            push([1], 2);
         ");
         let expected = vec![
             Object::Array(vec![Object::Int(1), Object::Bool(true)]),
@@ -376,6 +394,7 @@ mod tests {
             Object::Int(0),
             Object::Int(3),
             Object::Int(2),
+            Object::Array(vec![Object::Int(1), Object::Int(2)]),
         ];
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
