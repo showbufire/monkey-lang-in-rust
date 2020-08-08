@@ -231,21 +231,21 @@ fn eval_call_expression(function: &Box<Expression>, arguments: &Vec<Expression>,
             }
             match built_in {
                 BuiltIn::LEN => eval_built_in_len(arg_objs),
-                BuiltIn::PUSH => eval_built_in_push(arg_objs),
+                BuiltIn::PUSH => eval_built_in_push(&mut arg_objs),
             }
         },
         _ => Err(EvalError::CallNonFunction(format!("{:?}", function))),
     }
 }
 
-fn eval_built_in_push(args: Vec<Object>) -> Result<Object> {
+fn eval_built_in_push(args: &mut Vec<Object>) -> Result<Object> {
     if args.len() != 2 {
         return Err(EvalError::InvalidArguments(format!("built-in::push {:?}", args)));
     }
-    match (&args[0], &args[1]) {
-        (Object::Array(members), obj) => {
-            let mut new_arr = members.clone();
-            new_arr.push(obj.clone());
+    match (args.pop(), args.pop()) {
+        (Some(obj), Some(Object::Array(members))) => {
+            let mut new_arr = members;
+            new_arr.push(obj);
             Ok(Object::Array(new_arr))
         },
         _ => Err(EvalError::InvalidArguments(format!("built-in::push {:?}", args))),
