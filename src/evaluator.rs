@@ -24,6 +24,39 @@ pub enum BuiltIn {
     PUSH,
 }
 
+impl fmt::Display for BuiltIn {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BuiltIn::LEN => write!(f, "len"),
+            BuiltIn::PUSH => write!(f, "push"),
+        }
+    }
+}
+
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Object::Bool(bool_value) => write!(f, "{}", bool_value),
+            Object::Int(int_value) => write!(f, "{}", int_value),
+            Object::Null => write!(f, "<null>"),
+            Object::Function { func: _, env: _ } => write!(f, "<function>"),
+            Object::Return(ret) => ret.fmt(f),
+            Object::StringLiteral(str_value) => write!(f, "\"{}\"", str_value),
+            Object::BuiltInFunction(built_in) => write!(f, "<buitin function: {}>", built_in),
+            Object::Array(members) => {
+                write!(f, "[")?;
+                for (i, member) in members.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+                    member.fmt(f)?;
+                }
+                write!(f, "]")
+            },
+        }
+    }
+}
+
 impl fmt::Debug for Object {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

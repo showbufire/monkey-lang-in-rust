@@ -91,7 +91,7 @@ fn main() {
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
             Ok(program) => match eval_with_env(&program, &env) {
-                Ok(obj) => write!(stdout, "{:?}", obj),
+                Ok(obj) => write!(stdout, "{}", obj),
                 Err(err) => write!(stdout, "Eval error: {:?}", err),
             },
             Err(err) => write!(stdout, "Parsing error: {:?}", err),
