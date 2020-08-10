@@ -25,21 +25,41 @@ fn new_line(stdout: &mut io::Stdout) {
     stdout.flush().unwrap();
 }
 
-fn read_single_line(stdout: &mut io::Stdout) -> (String, bool) {
+fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, bool) {
     let stdin = io::stdin();
     write!(stdout, "{}", PROMPT).unwrap();
     stdout.flush().unwrap();
     let mut input = String::new();
+    let mut history_idx = history.len();
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Ctrl('d') => return (String::from(""), true),
             Key::Ctrl('c') => {
                 new_line(stdout);
-                return read_single_line(stdout);
+                return read_single_line(stdout, history);
+            },
+            Key::Ctrl('p') => {
+                if history_idx > 0 {
+                    history_idx -= 1;
+                    let (_, y) = stdout.cursor_pos().unwrap();
+                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, history[history_idx]).unwrap();
+                    input = history[history_idx].clone();
+                }
+            },
+            Key::Ctrl('n') => {
+                if history_idx + 1 < history.len() {
+                    history_idx += 1;
+                    let (_, y) = stdout.cursor_pos().unwrap();
+                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, history[history_idx]).unwrap();
+                    input = history[history_idx].clone();
+                }
             },
             Key::Backspace => {
-                write!(stdout, "{} {}", termion::cursor::Left(1), termion::cursor::Left(1)).unwrap();
-                input.pop();
+                let (x, _) = stdout.cursor_pos().unwrap();
+                if x as usize > PROMPT.len() + 1 {
+                    write!(stdout, "{} {}", termion::cursor::Left(1), termion::cursor::Left(1)).unwrap();
+                    input.pop();
+                }
             },
             Key::Char('\n') => {
                 new_line(stdout);
@@ -60,11 +80,13 @@ fn main() {
     let env = Env::new();
     let mut stdout = io::stdout().into_raw_mode().unwrap();
 
+    let mut history = Vec::new();
     loop {
-        let (input, quit) = read_single_line(&mut stdout);
+        let (input, quit) = read_single_line(&mut stdout, &history);
         if quit {
             break;
         }
+        history.push(input.clone());
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
