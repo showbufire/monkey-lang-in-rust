@@ -1,4 +1,7 @@
 extern crate termion;
+#[allow(unused_imports)]
+#[macro_use]
+extern crate matches;
 
 mod lexer;
 mod parser;

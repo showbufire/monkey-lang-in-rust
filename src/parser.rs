@@ -1,4 +1,4 @@
-use crate::lexer::{Token, Lexer};
+use crate::lexer::{Token, Lexer, LexerError};
 use crate::ast::*;
 
 pub struct Parser {
@@ -9,12 +9,9 @@ pub struct Parser {
 #[derive(Debug, Clone)]
 pub enum ParserError {
     UnexpectedToken { expected: Token, actual: Token },
-    NotLeft(Token),
+    LexerError(LexerError),
+    NotExpression(Token),
     NotIdentifier(Token),
-    NotInt(Token),
-    NotBool(Token),
-    NotString(Token),
-    NotPrefixOp(Token),
 }
 
 type Result<T> = std::result::Result<T, ParserError>;
@@ -54,15 +51,19 @@ fn is_infix_op(token: &Token) -> bool {
 
 #[allow(dead_code)]
 impl Parser {
-    pub fn new(mut lexer: Lexer) -> Parser {
-        let first_token = lexer.next_token();
+    pub fn new(lexer: Lexer) -> Parser {
         Parser {
             lexer,
-            cur_token: first_token,
+            cur_token: Token::EOF,
         }
     }
 
+    fn init(&mut self) -> Result<()> {
+        self.next_token()
+    }
+
     pub fn parse_program(&mut self) -> Result<Program> {
+        self.init()?;
         let mut statements = Vec::new();
         while self.cur_token != Token::EOF {
             let statement = self.parse_statement()?;
@@ -86,7 +87,7 @@ impl Parser {
     fn parse_expression_statement(&mut self) -> Result<Statement> {
         let expr = self.parse_expression(Precedence::LOWEST)?;
         if self.cur_token == Token::SEMICOLON {
-            self.next_token();
+            self.next_token()?;
         }
         Ok(Statement::Expr{ expr })
     }
@@ -119,7 +120,7 @@ impl Parser {
             Err(ParserError::NotIdentifier(self.cur_token.clone()))
         };
         if result.is_ok() {
-            self.next_token();
+            self.next_token()?;
         }
         result
     }
@@ -127,7 +128,7 @@ impl Parser {
     fn parse_expression(&mut self, precedence: Precedence) -> Result<Expression> {
         let mut left = match self.cur_token {
             Token::IDENT(_) => self.parse_identifier()?,
-            Token::INT(_) => self.parse_int()?,
+            Token::INT(int_value) => self.parse_int(int_value)?,
             Token::STRING(_) => self.parse_string()?,
             Token::TRUE | Token::FALSE => self.parse_bool()?,
             Token::LPAREN => self.parse_grouped_expression()?,
@@ -135,7 +136,7 @@ impl Parser {
             Token::IF => self.parse_if_expression()?,
             Token::FUNCTION => self.parse_function_expression()?,
             Token::LBRACKET => self.parse_array()?,
-            _ => return Err(ParserError::NotLeft(self.cur_token.clone())),
+            _ => return Err(ParserError::NotExpression(self.cur_token.clone())),
         };
         while is_infix_op(&self.cur_token) && precedence < op_precedence(&self.cur_token) {
             match self.cur_token {
@@ -156,7 +157,7 @@ impl Parser {
                     }
                 },
                 _ => {
-                    let op = self.pop_token();
+                    let op = self.pop_token()?;
                     let right = self.parse_expression(op_precedence(&op))?;
                     left = Expression::Infix {
                         op,
@@ -195,7 +196,7 @@ impl Parser {
             let expr = self.parse_expression(Precedence::LOWEST)?;
             expr_list.push(expr);
             if self.cur_token == Token::COMMA {
-                self.next_token();
+                self.next_token()?;
             }
         }
         self.expect_token(closing_token)?;
@@ -210,7 +211,7 @@ impl Parser {
         let consequence = self.parse_block_statement()?;
         let mut alternative = None;
         if self.cur_token == Token::ELSE {
-            self.next_token();
+            self.next_token()?;
             alternative = Some(Box::new(self.parse_block_statement()?));
         }
         Ok(Expression::If {
@@ -237,10 +238,10 @@ impl Parser {
         let res = match self.cur_token {
             Token::TRUE => Ok(Expression::Bool { value: true }),
             Token::FALSE => Ok(Expression::Bool { value: false }),
-            _ => Err(ParserError::NotBool(self.cur_token.clone())),
+            _ => panic!("parser expected bool, got: {:?}", self.cur_token),
         };
         if res.is_ok() {
-            self.next_token();
+            self.next_token()?;
         }
         res
     }
@@ -255,51 +256,51 @@ impl Parser {
     fn parse_prefix_expression(&mut self) -> Result<Expression> {
         match self.cur_token {
             Token::BANG | Token::MINUS => {
-                let op = self.pop_token();
+                let op = self.pop_token()?;
                 let expr = self.parse_expression(Precedence::PREFIX)?;
                 Ok(Expression::Prefix { op, expr: Box::new(expr)})
             },
-            _ => Err(ParserError::NotPrefixOp(self.cur_token.clone())),
+            _ => panic!("parser expected prefix op, got: {:?}", self.cur_token),
         }
     }
 
-    fn parse_int(&mut self) -> Result<Expression> {
-        if let Token::INT(value) = self.cur_token {
-            self.next_token();
-            Ok(Expression::Int{ value })
-        } else {
-            Err(ParserError::NotInt(self.cur_token.clone()))
-        }
+    fn parse_int(&mut self, int_value: i64) -> Result<Expression> {
+        self.next_token()?;
+        Ok(Expression::Int{ value: int_value })
     }
 
     fn parse_string(&mut self) -> Result<Expression> {
-        let result = if let Token::STRING(s) = &self.cur_token {
-            Ok(Expression::StringLiteral(s.clone()))
+        let expr = if let Token::STRING(s) = &self.cur_token {
+            Expression::StringLiteral(s.clone())
         } else {
-            Err(ParserError::NotString(self.cur_token.clone()))
+            panic!("parser expected string(, got : {:?}", self.cur_token);
         };
-        if result.is_ok() {
-            self.next_token();
-        }
-        result
+        self.next_token()?;
+        Ok(expr)
     }
 
     fn expect_token(&mut self, expected: Token) -> Result<()> {
         if self.cur_token != expected {
             return Err(ParserError::UnexpectedToken{ expected, actual: self.cur_token.clone() });
         }
-        self.next_token();
+        self.next_token()?;
         Ok(())
     }
 
-    fn pop_token(&mut self) -> Token {
+    fn pop_token(&mut self) -> Result<Token> {
         let token = self.cur_token.clone();
-        self.next_token();
-        token
+        self.next_token()?;
+        Ok(token)
     }
 
-    fn next_token(&mut self) {
-        self.cur_token = self.lexer.next_token();
+    fn next_token(&mut self) -> Result<()> {
+        match self.lexer.next_token() {
+            Err(lexer_error) => Err(ParserError::LexerError(lexer_error)),
+            Ok(first_token) => {
+                self.cur_token = first_token;
+                Ok(())
+            },
+        }
     }
 }
 
@@ -618,5 +619,45 @@ mod tests {
             }
         ];
         test_parse_expressions(input, expected);
+    }
+
+    #[test]
+    fn test_lexer_error() {
+        let lexer = Lexer::new(String::from("? x;"));
+        let mut parser = Parser::new(lexer);
+        let parse_result = parser.parse_program();
+
+        assert!(parse_result.is_err(), "expected an error, got: {:?}", parse_result.unwrap());
+        assert_matches!(parse_result.unwrap_err(), ParserError::LexerError(_));
+    }
+
+    #[test]
+    fn test_not_identifier_error() {
+        let lexer = Lexer::new(String::from("let 3 3;"));
+        let mut parser = Parser::new(lexer);
+        let parse_result = parser.parse_program();
+
+        assert!(parse_result.is_err(), "expected an error, got: {:?}", parse_result.unwrap());
+        assert_matches!(parse_result.unwrap_err(), ParserError::NotIdentifier(_));
+    }
+
+    #[test]
+    fn test_not_expression_error() {
+        let lexer = Lexer::new(String::from("3 + return 5;"));
+        let mut parser = Parser::new(lexer);
+        let parse_result = parser.parse_program();
+
+        assert!(parse_result.is_err(), "expected an error, got: {:?}", parse_result.unwrap());
+        assert_matches!(parse_result.unwrap_err(), ParserError::NotExpression(_));
+    }
+
+    #[test]
+    fn test_unexpected_token_error() {
+        let lexer = Lexer::new(String::from("let x = 5")); // missing semicolon
+        let mut parser = Parser::new(lexer);
+        let parse_result = parser.parse_program();
+
+        assert!(parse_result.is_err(), "expected an error, got: {:?}", parse_result.unwrap());
+        assert_matches!(parse_result.unwrap_err(), ParserError::UnexpectedToken{ expected: _, actual: _ });
     }
 }

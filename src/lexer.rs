@@ -46,6 +46,14 @@ pub struct Lexer {
     ch: u8,
 }
 
+#[derive(Debug, Clone)]
+pub enum LexerError {
+    UnknownChar(char),
+    UncloseString(String),
+}
+
+type Result<T> = std::result::Result<T, LexerError>;
+
 impl Lexer {
     pub fn new(input: String) -> Lexer {
         let mut lexer = Lexer {
@@ -113,54 +121,60 @@ impl Lexer {
         Token::INT(x)
     }
 
-    fn next_string(&mut self) -> Token {
+    fn next_string(&mut self) -> Result<Token> {
         let mut s = String::new();
         self.read_char();
-        while self.ch != b'"' {
+        while self.ch != b'"' && self.ch != 0 {
             s.push(self.ch as char);
             self.read_char();
         }
-        Token::STRING(s)
+        if self.ch == b'"' {
+            Ok(Token::STRING(s))
+        } else {
+            Err(LexerError::UncloseString(s))
+        }
     }
 
-    pub fn next_token(&mut self) -> Token {
+    pub fn next_token(&mut self) -> Result<Token> {
         self.skip_whitespaces();
 
-        let token = match self.ch {
+        let result = match self.ch {
             b'=' => if self.peek_char() != b'=' {
-                        Token::ASSIGN
+                        Ok(Token::ASSIGN)
                     } else {
                         self.read_char();
-                        Token::EQ
+                        Ok(Token::EQ)
                     }
-            b'+' => Token::PLUS,
-            b'(' => Token::LPAREN,
-            b')' => Token::RPAREN,
-            b'{' => Token::LBRACE,
-            b'}' => Token::RBRACE,
-            b',' => Token::COMMA,
-            b';' => Token::SEMICOLON,
-            b'-' => Token::MINUS,
-            b'/' => Token::SLASH,
-            b'*' => Token::ASTERISK,
-            b'<' => Token::LT,
-            b'>' => Token::GT,
+            b'+' => Ok(Token::PLUS),
+            b'(' => Ok(Token::LPAREN),
+            b')' => Ok(Token::RPAREN),
+            b'{' => Ok(Token::LBRACE),
+            b'}' => Ok(Token::RBRACE),
+            b',' => Ok(Token::COMMA),
+            b';' => Ok(Token::SEMICOLON),
+            b'-' => Ok(Token::MINUS),
+            b'/' => Ok(Token::SLASH),
+            b'*' => Ok(Token::ASTERISK),
+            b'<' => Ok(Token::LT),
+            b'>' => Ok(Token::GT),
             b'!' => if self.peek_char() != b'=' {
-                        Token::BANG
+                        Ok(Token::BANG)
                     } else {
                         self.read_char();
-                        Token::NE
+                        Ok(Token::NE)
                     }
-            b'a'..= b'z' | b'A'..= b'Z'=> self.next_identifier_or_keyword(),
-            b'0'..= b'9' => self.next_int(),
+            b'a'..= b'z' | b'A'..= b'Z'=> Ok(self.next_identifier_or_keyword()),
+            b'0'..= b'9' => Ok(self.next_int()),
             b'"' => self.next_string(),
-            b'[' => Token::LBRACKET,
-            b']' => Token::RBRACKET,
-            0 => Token::EOF,
-            _ => panic!("unknown char {}", String::from_utf8(vec![self.ch]).unwrap()),
+            b'[' => Ok(Token::LBRACKET),
+            b']' => Ok(Token::RBRACKET),
+            0 => Ok(Token::EOF),
+            _ => Err(LexerError::UnknownChar(self.ch as char)),
         };
-        self.read_char();
-        token
+        if result.is_ok() {
+            self.read_char();
+        }
+        result
     }
 
     fn skip_whitespaces(&mut self) {
@@ -176,6 +190,7 @@ impl Lexer {
 
 #[cfg(test)]
 mod tests {
+
     use crate::lexer::*;
 
     #[test]
@@ -196,7 +211,9 @@ mod tests {
         ];
 
         for expected_token in expected {
-            let token = lexer.next_token();
+            let result = lexer.next_token();
+            assert!(result.is_ok(), "unexpected lexer error: {:?}", result.unwrap_err());
+            let token = result.unwrap();
             assert_eq!(token, expected_token);
         }
     }
@@ -308,8 +325,18 @@ mod tests {
         ];
 
         for expected_token in expected {
-            let token = lexer.next_token();
+            let result = lexer.next_token();
+            assert!(result.is_ok(), "unexpected lexer error: {:?}", result.unwrap_err());
+            let token = result.unwrap();
             assert_eq!(token, expected_token);
         }
+    }
+
+    #[test]
+    fn test_unknown_token() {
+        let mut lexer = Lexer::new(String::from("?"));
+        let result = lexer.next_token();
+        assert!(result.is_err(), "result should be an error, got: {:?}", result.unwrap());
+        assert_matches!(result.unwrap_err(), LexerError::UnknownChar(_));
     }
 }
