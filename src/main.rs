@@ -34,6 +34,7 @@ fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, 
     stdout.flush().unwrap();
     let mut input = String::new();
     let mut history_idx = history.len();
+    let mut tmp = String::new();
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Ctrl('d') => return (String::from(""), true),
@@ -43,6 +44,9 @@ fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, 
             },
             Key::Ctrl('p') => {
                 if history_idx > 0 {
+                    if history_idx == history.len() {
+                        tmp = input;
+                    }
                     history_idx -= 1;
                     let (_, y) = stdout.cursor_pos().unwrap();
                     write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, history[history_idx]).unwrap();
@@ -50,12 +54,22 @@ fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, 
                 }
             },
             Key::Ctrl('n') => {
-                if history_idx + 1 < history.len() {
+                if history_idx + 1 <= history.len() {
                     history_idx += 1;
                     let (_, y) = stdout.cursor_pos().unwrap();
-                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, history[history_idx]).unwrap();
-                    input = history[history_idx].clone();
+                    if history_idx == history.len() {
+                        input = tmp.clone();
+                    } else {
+                        input = history[history_idx].clone();
+                    }
+                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, input).unwrap();
                 }
+            },
+            Key::Ctrl('u') => {
+                input.clear();
+                let (_, y) = stdout.cursor_pos().unwrap();
+                write!(stdout, "{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT).unwrap();
+                stdout.flush().unwrap();
             },
             Key::Backspace => {
                 let (x, _) = stdout.cursor_pos().unwrap();
@@ -73,7 +87,7 @@ fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, 
                 write!(stdout, "{}", c).unwrap();
             },
             _ => (),
-        }
+        };
         stdout.flush().unwrap();
     }
     (input, false)
