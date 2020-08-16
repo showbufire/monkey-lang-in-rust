@@ -28,13 +28,13 @@ fn new_line(stdout: &mut io::Stdout) {
     write!(stdout, "{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, row)).unwrap();
 }
 
-fn redraw(stdout: &mut io::Stdout, indented: bool, line: &String) {
+fn redraw(stdout: &mut io::Stdout, indented: bool, line: &String, column: usize) {
     let (_, row) = stdout.cursor_pos().unwrap();
     write!(stdout, "{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, row)).unwrap();
     if indented {
-        write!(stdout, "{}{}", PROMPT2, line).unwrap();
+        write!(stdout, "{}{}{}", PROMPT2, line, termion::cursor::Goto(column as u16 + 4, row)).unwrap();
     } else {
-        write!(stdout, "{}{}", PROMPT, line).unwrap();
+        write!(stdout, "{}{}{}", PROMPT, line, termion::cursor::Goto(column as u16 + 4, row)).unwrap();
     }
     stdout.flush().unwrap();
 }
@@ -48,7 +48,7 @@ fn read_next(stdout: &mut io::Stdout, history: &mut Vec<String>) -> (String, boo
     let mut tmp = String::new();
     let mut column = 0;
 
-    redraw(stdout, indented, &line);
+    redraw(stdout, indented, &line, column);
     for c in stdin.keys() {
         match c.unwrap() {
             Key::Backspace if column > 0 => {
@@ -56,14 +56,18 @@ fn read_next(stdout: &mut io::Stdout, history: &mut Vec<String>) -> (String, boo
                 line.remove(column);
             },
             Key::Ctrl('d') => return (input, true),
+            Key::Ctrl('b') if column > 0 => column -= 1,
+            Key::Ctrl('f') if column < line.len() => column +=1 ,
             Key::Ctrl('c') => {
                 new_line(stdout);
                 return read_next(stdout, history);
             },
             Key::Ctrl('u') => {
-                line.clear();
+                line = String::from(&line[column..line.len()]);
                 column = 0;
             },
+            Key::Ctrl('a') => column = 0,
+            Key::Ctrl('e') => column = line.len(),
             Key::Ctrl('p') if history_idx > 0 => {
                 if history_idx == history.len() {
                     tmp = line.clone();
@@ -97,12 +101,12 @@ fn read_next(stdout: &mut io::Stdout, history: &mut Vec<String>) -> (String, boo
                 column = 0;
             }
             Key::Char(c) => {
+                line.insert(column, c);
                 column += 1;
-                line.push(c.clone());
             },
             _ => (),
         };
-        redraw(stdout, indented, &line);
+        redraw(stdout, indented, &line, column);
     }
     (input, false)
 }
