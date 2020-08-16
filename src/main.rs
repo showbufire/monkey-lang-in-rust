@@ -20,75 +20,89 @@ use termion::event::Key;
 use termion::cursor::DetectCursorPos;
 
 const PROMPT: &str = ">> ";
+const PROMPT2: &str = ".. ";
 
 fn new_line(stdout: &mut io::Stdout) {
     write!(stdout, "\n").unwrap();
-    let (_, y) = stdout.cursor_pos().unwrap();
-    write!(stdout, "{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y)).unwrap();
+    let (_, row) = stdout.cursor_pos().unwrap();
+    write!(stdout, "{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, row)).unwrap();
+}
+
+fn redraw(stdout: &mut io::Stdout, indented: bool, line: &String) {
+    let (_, row) = stdout.cursor_pos().unwrap();
+    write!(stdout, "{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, row)).unwrap();
+    if indented {
+        write!(stdout, "{}{}", PROMPT2, line).unwrap();
+    } else {
+        write!(stdout, "{}{}", PROMPT, line).unwrap();
+    }
     stdout.flush().unwrap();
 }
 
-fn read_single_line(stdout: &mut io::Stdout, history: &Vec<String>) -> (String, bool) {
+fn read_next(stdout: &mut io::Stdout, history: &mut Vec<String>) -> (String, bool) {
     let stdin = io::stdin();
-    write!(stdout, "{}", PROMPT).unwrap();
-    stdout.flush().unwrap();
     let mut input = String::new();
+    let mut line = String::new();
+    let mut indented = false;
     let mut history_idx = history.len();
     let mut tmp = String::new();
+    let mut column = 0;
+
+    redraw(stdout, indented, &line);
     for c in stdin.keys() {
         match c.unwrap() {
-            Key::Ctrl('d') => return (String::from(""), true),
+            Key::Backspace if column > 0 => {
+                column -= 1;
+                line.remove(column);
+            },
+            Key::Ctrl('d') => return (input, true),
             Key::Ctrl('c') => {
                 new_line(stdout);
-                return read_single_line(stdout, history);
-            },
-            Key::Ctrl('p') => {
-                if history_idx > 0 {
-                    if history_idx == history.len() {
-                        tmp = input;
-                    }
-                    history_idx -= 1;
-                    let (_, y) = stdout.cursor_pos().unwrap();
-                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, history[history_idx]).unwrap();
-                    input = history[history_idx].clone();
-                }
-            },
-            Key::Ctrl('n') => {
-                if history_idx + 1 <= history.len() {
-                    history_idx += 1;
-                    let (_, y) = stdout.cursor_pos().unwrap();
-                    if history_idx == history.len() {
-                        input = tmp.clone();
-                    } else {
-                        input = history[history_idx].clone();
-                    }
-                    write!(stdout, "{}{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT, input).unwrap();
-                }
+                return read_next(stdout, history);
             },
             Key::Ctrl('u') => {
-                input.clear();
-                let (_, y) = stdout.cursor_pos().unwrap();
-                write!(stdout, "{}{}{}", termion::clear::CurrentLine, termion::cursor::Goto(1, y), PROMPT).unwrap();
-                stdout.flush().unwrap();
+                line.clear();
+                column = 0;
             },
-            Key::Backspace => {
-                let (x, _) = stdout.cursor_pos().unwrap();
-                if x as usize > PROMPT.len() + 1 {
-                    write!(stdout, "{} {}", termion::cursor::Left(1), termion::cursor::Left(1)).unwrap();
-                    input.pop();
+            Key::Ctrl('p') if history_idx > 0 => {
+                if history_idx == history.len() {
+                    tmp = line.clone();
                 }
+                history_idx -= 1;
+                line = history[history_idx].clone();
+                column = line.len();
+            },
+            Key::Ctrl('n') if history_idx <  history.len() => {
+                history_idx += 1;
+                if history_idx == history.len() {
+                    line = tmp.clone();
+                } else {
+                    line = history[history_idx].clone();
+                }
+                column = line.len();
             },
             Key::Char('\n') => {
                 new_line(stdout);
-                break;
+                if history_idx == history.len() {
+                    history_idx += 1;
+                }
+                history.push(line.clone());
+                input.push_str(" ");
+                input.push_str(&line);
+                match line.chars().last() {
+                    Some(';') => break,
+                    _ => indented = true,
+                }
+                line.clear();
+                column = 0;
             }
             Key::Char(c) => {
-                input.push(c.clone());
-                write!(stdout, "{}", c).unwrap();
+                column += 1;
+                line.push(c.clone());
             },
             _ => (),
         };
-        stdout.flush().unwrap();
+        redraw(stdout, indented, &line);
     }
     (input, false)
 }
@@ -99,11 +113,10 @@ fn main() {
 
     let mut history = Vec::new();
     loop {
-        let (input, quit) = read_single_line(&mut stdout, &history);
+        let (input, quit) = read_next(&mut stdout, &mut history);
         if quit {
             break;
         }
-        history.push(input.clone());
         let lexer = Lexer::new(input);
         let mut parser = Parser::new(lexer);
         match parser.parse_program() {
